@@ -1,0 +1,308 @@
+/**
+ * This file is part of Moodle - http://moodle.org/
+ *
+ * Moodle is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Moodle is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+/**
+ * Local Parce - Chat styles
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+/* Floating Chat Bubble */
+.local_parce-chat-bubble {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 30px;
+    height: 30px;
+    background-color: var(--primary, #007bff);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 999;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+}
+
+.local_parce-chat-bubble:hover {
+    transform: scale(1.1);
+    opacity: 0.9;
+}
+
+.local_parce-chat-bubble:focus {
+    outline: 2px solid var(--secondary, #6c757d);
+    outline-offset: 2px;
+}
+
+.local_parce-bubble-icon {
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--white, #fff);
+}
+
+.local_parce-bubble-icon img {
+    margin: 0;
+    filter: invert(1);
+}
+
+/* Chat Window */
+#local_parce-chat-window-container {
+    position: fixed;
+    bottom: 90px;
+    right: 20px;
+    width: 350px;
+    height: 500px;
+    background-color: var(--white, #fff);
+    border-radius: 8px;
+    box-shadow: 0 5px 40px rgba(0, 0, 0, 0.16);
+    display: flex;
+    flex-direction: column;
+    z-index: 99;
+    transform: translateY(20px);
+    transition: all 0.3s ease;
+    opacity: 0;
+    visibility: hidden;
+}
+
+#local_parce-chat-window-container.local_parce-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.local_parce-chat-window {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Chat Header */
+.local_parce-chat-header {
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    color: white;
+    padding: 16px;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.local_parce-chat-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.local_parce-close-btn i {
+    color: var(--white, #fff);
+    margin: 0;
+}
+
+.local_parce-close-btn:hover {
+    opacity: 0.8;
+}
+
+.local_parce-close-btn i {
+    font-size: 20px;
+}
+
+/* Messages Container */
+.local_parce-chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    background-color: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.local_parce-chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.local_parce-chat-messages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.local_parce-chat-messages::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+.local_parce-chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Messages */
+.local_parce-message {
+    display: flex;
+    margin-bottom: 8px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.local_parce-message-user {
+    justify-content: flex-end;
+}
+
+.local_parce-message-bot {
+    justify-content: flex-start;
+}
+
+.local_parce-message-loading {
+    justify-content: flex-start;
+}
+
+.local_parce-message-content {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 8px;
+    word-wrap: break-word;
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.local_parce-message-user .local_parce-message-content {
+    background-color: var(--primary, #007bff);
+    color: white;
+    border-bottom-right-radius: 2px;
+}
+
+.local_parce-message-bot .local_parce-message-content {
+    background-color: white;
+    color: #333;
+    border: 1px solid #e0e0e0;
+    border-bottom-left-radius: 2px;
+}
+
+.local_parce-message-loading .local_parce-message-content {
+    background-color: white;
+    color: #666;
+    border: 1px solid #e0e0e0;
+    border-bottom-left-radius: 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Welcome message */
+.local_parce-message-welcome {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    padding: 20px;
+}
+
+.local_parce-message-welcome p {
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Chat Footer */
+.local_parce-chat-footer {
+    padding: 5px;
+    background-color: white;
+    border-top: 1px solid #e0e0e0;
+    border-radius: 0 0 8px 8px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.local_parce-message-input {
+    resize: vertical;
+    min-height: auto;
+    max-height: 200px;
+    height: 20px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px 12px;
+}
+
+.local_parce-message-input:focus {
+    outline: none;
+    border-color: var(--primary, #007bff);
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.local_parce-send-btn {
+    margin-left: 5px;
+}
+
+.local_parce-send-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.local_parce-send-btn i {
+    margin: 0;
+}
+
+/* Responsive design for mobile */
+@media (max-width: 480px) {
+    #local_parce-chat-window-container {
+        width: calc(100% - 20px);
+        height: calc(100vh - 100px);
+        max-height: 600px;
+    }
+
+    .local_parce-message-content {
+        max-width: 90%;
+    }
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+    .local_parce-chat-bubble,
+    #local_parce-chat-window-container,
+    .local_parce-message {
+        transition: none;
+        animation: none;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: more) {
+    .local_parce-chat-bubble {
+        border: 2px solid currentColor;
+    }
+
+    .local_parce-message-content {
+        border-width: 2px;
+    }
+}
