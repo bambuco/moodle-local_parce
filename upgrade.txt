@@ -1,0 +1,27 @@
+Upgrade Notes for Local Parce Plugin
+====================================
+
+Version 1.0.0 (2026-02-11)
+==========================
+
+* Added third-party library: Marked.js v11.1.1
+  - Location: lib/marked/marked.min.js
+  - License: MIT (GPLv3 compatible)
+  - Description: A markdown parser and compiler
+  - Added: readme_moodle.txt with update instructions
+  - See lib/marked/readme_moodle.txt for details
+
+* New Markdown Rendering Feature
+  - Added MarkdownRenderer module (amd/src/markdown-renderer.js)
+  - Chat responses with markdown syntax are automatically parsed and rendered as HTML
+  - Supports common markdown syntax: headers, bold, italic, lists, links, code blocks, etc.
+  
+* Updated Files:
+  - classes/hooks/output.php: Added marked.js library loading via PHP hook
+  - amd/src/markdown-renderer.js: New module for markdown processing
+  - amd/src/chat-handler.js: Integrated markdown detection and rendering for bot responses
+  - thirdpartylibs.xml: Registered marked.js library
+
+* Hook Changes:
+  - Marked.js is loaded globally before AMD modules via the output hook
+  - This ensures window.marked is available to all AMD modules that need it

@@ -27,4 +27,18 @@ namespace local_parce\local\intent;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class greeting extends base {
+    /**
+     * Get the content based on the parameters.
+     *
+     * @return string The content to be displayed, based on the keywords or topics provided in the parameters.
+     */
+    public function get_content(): string {
+        if (!empty($this->params)) {
+            $greeting = reset($this->params);
+            if (!empty($greeting) && is_string($greeting)) {
+                return $greeting;
+            }
+        }
+        return get_string('intent_greeting_default', 'local_parce');
+    }
 }

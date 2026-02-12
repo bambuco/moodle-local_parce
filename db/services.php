@@ -35,4 +35,12 @@ $functions = [
         'ajax' => true,
         'capabilities' => 'local/parce:usechat',
     ],
+
+    'local_parce_get_conversation' => [
+        'classname' => local_parce\external\get_conversation::class,
+        'description' => 'Get chat conversation',
+        'type' => 'read',
+        'ajax' => true,
+        'capabilities' => 'local/parce:viewallchats',
+    ],
 ];

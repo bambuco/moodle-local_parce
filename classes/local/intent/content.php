@@ -26,16 +26,20 @@ namespace local_parce\local\intent;
  */
 class content extends base {
     /**
-     * Class constructor
+     * List of modules that are considered activities.
      *
-     * @param mixed $params Can be a string with keywords or an array with more specific parameters.
+     * @return array
      */
-    #[\Override]
-    public function __construct(protected mixed $params = []) {
-        if (is_string($this->params)) {
-            $this->params = ['content' => $this->params];
-        }
-    }
+    public const ACTIVITIES = [
+        'mod_assign',
+        'mod_data',
+        'mod_feedback',
+        'mod_forum',
+        'mod_lesson',
+        'mod_quiz',
+        'mod_scorm',
+        'mod_workshop',
+    ];
 
     /**
      * Get the content based on the parameters.
@@ -44,8 +48,23 @@ class content extends base {
      */
     #[\Override]
     public function get_content(): string {
-        // ToDo: Implement actual content retrieval logic based on keywords or topics.
-        return 'Contenido relacionado con: ' . ($this->params['content'] ?? '') . '.';
+        if (empty($this->params)) {
+            return get_string('intent_content_default', 'local_parce');
+        }
+
+        $q = implode(' ', $this->params);
+        $content = self::get_search($q);
+
+        if (empty($content)) {
+            $allowopenanswer = get_config('local_parce', 'allowopenanswer');
+            if (!$allowopenanswer) {
+                throw new \moodle_exception('intent_content_notfound', 'local_parce');
+            }
+            // If no content is found, and open answering is allowed, we can return an empty string or a default message.
+            return '';
+        }
+
+        return $content;
     }
 
     /**
@@ -56,5 +75,99 @@ class content extends base {
     #[\Override]
     public function require_ia(): bool {
         return true;
+    }
+
+    private function get_search(string $search, array $resourcetype = []): string {
+        global $USER;
+
+        if (empty($search) && empty($resourcetype)) {
+            return '';
+        }
+
+        $coursecontext = $this->context->get_course_context(false);
+
+        $indexingenabled = \core_search\manager::is_indexing_enabled();
+
+        if (!$indexingenabled) {
+            return get_string('error_search_unavailable', 'local_parce');
+        }
+
+        $searchmanager = \core_search\manager::instance();
+
+        $data = (object)['q' => $search];
+
+        if (!empty($coursecontext)) {
+            $data->courseids = [$coursecontext->instanceid];
+        }
+
+        if (!empty($resourcetype)) {
+            $data->areaids = [];
+            $enabledsearchareas = \core_search\manager::get_search_areas_list(true);
+            foreach ($enabledsearchareas as $area) {
+                $componentname = $area->get_component_name();
+
+                // A special case when all activities are requested.
+                if (
+                    $resourcetype == 'mod'
+                    && strpos($componentname, 'mod_') === 0
+                    && in_array($componentname, self::ACTIVITIES)
+                ) {
+                    $data->areaids[] = $area->get_area_id();
+                    continue;
+                }
+
+                if (in_array($componentname, $resourcetype)) {
+                    $data->areaids[] = $area->get_area_id();
+                } else if (in_array($area->get_area_id(), $resourcetype)) {
+                    // In case the area name is passed instead of the component name.
+                    $data->areaids[] = $area->get_area_id();
+                }
+            }
+        }
+
+        // The logic for "$data->userids" is included but was not found to be implemented in the core code.
+        $data->userids = [$this->user->id];
+
+        // ToDo: A horrible hack to replace the unimplemented "userids" parameter.
+        // A temporary impersonation of the user is needed because the Search API does
+        // not take into account the user being filtered with.
+        $tmpuser = clone($USER);
+        $results = [];
+        if ($this->user->id != $USER->id) {
+            $USER = $this->user;
+        }
+        $results = $searchmanager->search($data);
+
+        if (empty($coursecontext)) {
+            // Search in the public area.
+            $USER = new \stdClass();
+            $USER->id = 0;
+            $results += $searchmanager->search($data);
+        }
+
+        // Restore the original user.
+        $USER = $tmpuser;
+
+        $k = 0;
+        $limit = 5;
+        foreach ($results as $result) {
+            $title = $result->get('title');
+
+            $resource = new \stdClass();
+            $resource->name = ($title !== '') ? $title : get_string('notitle', 'search');
+            $resource->url = (string)$result->get_doc_url();
+            $parts = \core_search\manager::extract_areaid_parts($result->get('areaid'));
+            $resource->type = $parts[0];
+            $resource->subtype = count($parts) > 1 ? $parts[1] : '';
+            $resource->content = $result->get('content');
+
+            $found[] = $resource;
+
+            if (++$k >= $limit) {
+                break;
+            }
+        }
+
+        return empty($found) ? '' : @json_encode($found);
     }
 }

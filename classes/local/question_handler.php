@@ -27,9 +27,7 @@
 
 namespace local_parce\local;
 
-use local_parce\aiactions\answer_question;
 use local_parce\aiactions\question_plan;
-use core_ai\aiactions\generate_text;
 
 /**
  * Question handler class
@@ -42,15 +40,19 @@ class question_handler {
      * Process a question and return a response.
      *
      * @param string $question The question text from the user.
-     * @param int $contextid The context ID for capability checks and answer generation.
+     * @param object $context The question context.
      * @return string The response to the question.
      */
-    public static function process($question, $contextid = 1) {
+    public static function process($question, $context = null): string {
         global $USER;
 
         // Validate input.
         if (empty($question)) {
             return get_string('error_empty_question', 'local_parce');
+        }
+
+        if (empty($context)) {
+            $context = \context_system::instance();
         }
 
         try {
@@ -82,8 +84,8 @@ class question_handler {
             $jsonquestion = json_encode($hackquestion);
 
             // Create the appropriate action with the user's question.
-            $action = new question_plan (
-                contextid: $contextid,
+            $action = new question_plan(
+                contextid: $context->id,
                 userid: $USER->id,
                 prompttext: $jsonquestion
             );
@@ -118,20 +120,43 @@ class question_handler {
                 return get_string('error_processing_question', 'local_parce');
             }
 
-            $intentobj = new $intentclass($type['params'] ?? []);
+            $intentparams = $type['params'] ?? [];
+            if (!is_array($intentparams)) {
+                $intentparams = [$intentparams];
+            }
+            $intentobj = new $intentclass($context, null, $intentparams);
 
             if (!$intentobj->require_ia()) {
                 return $intentobj->get_content();
             }
 
+            try {
+                $content = $intentobj->get_content();
+            } catch (\Exception $e) {
+                return $e->getMessage();
+            }
+
+            if (empty($content)) {
+                $allowopenanswer = get_config('local_parce', 'allowopenanswer');
+                if (!$allowopenanswer) {
+                    return get_string('msg_no_content', 'local_parce');
+                }
+
+                $content = get_config('local_parce', 'openanswer_prompt');
+
+                if (empty($content)) {
+                    $content = get_string('default_openanswer_prompt', 'local_parce');
+                }
+            }
+
             $hackquestion = new \stdClass();
             $hackquestion->question = $question;
             $hackquestion->previous = [];
-            $hackquestion->content = $intentobj->get_content();
+            $hackquestion->content = $content;
             $jsonquestion = json_encode($hackquestion);
 
-            $action = new question_plan (
-                contextid: $contextid,
+            $action = new question_plan(
+                contextid: $context->id,
                 userid: $USER->id,
                 prompttext: $jsonquestion
             );
@@ -158,7 +183,6 @@ class question_handler {
             }
 
             return $generatedcontent;
-
         } catch (\core\exception\coding_exception $e) {
             return get_string('error_ai_unavailable', 'local_parce');
         } catch (\Exception $e) {

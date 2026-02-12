@@ -15,19 +15,22 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Installation script for local_parce
+ * Cache definitions for local_parce
+ *
+ * Documentation: {@link https://docs.moodle.org/dev/Cache_API}
  *
  * @package    local_parce
+ * @category   cache
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-/**
- * Execute local_parce installation.
- *
- * @return void
- */
-function xmldb_local_parce_install() {
-    // Plugin installation logic can be added here if needed in the future.
-    // Currently, the plugin only provides UI components and does not require database tables.
-}
+defined('MOODLE_INTERNAL') || die();
+
+$definitions = [
+    'conversation' => [
+        'mode' => cache_store::MODE_SESSION,
+        'simplekeys' => true,
+        'simpledata' => false,
+    ],
+];

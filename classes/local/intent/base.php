@@ -27,11 +27,22 @@ class base {
     /**
      * Class constructor.
      *
-     * @param mixed $params Can be a string with keywords or an array with more specific parameters.
+     * @param \core\context $context Intention context.
+     * @param object $user The user for whom the intent is being processed.
+     * @param array $params Can be a string with keywords or an array with more specific parameters.
      */
-    public function __construct(protected mixed $params = []) {
-        if (is_string($this->params)) {
-            $this->params = ['content' => $this->params];
+    public function __construct(
+        /** @var \core\context Intention context. */
+        protected \core\context $context,
+        /** @var ?object User. */
+        protected ?object $user,
+        /** @var array Intent params. */
+        protected array $params = []
+    ) {
+        global $USER;
+
+        if (empty($this->user) || !is_object($this->user)) {
+            $this->user = $USER;
         }
     }
 
@@ -41,7 +52,7 @@ class base {
      * @return string The content to be displayed, based on the keywords or topics provided in the parameters.
      */
     public function get_content(): string {
-        return $this->params['content'] ?? '';
+        return get_string('default_intent_response', 'local_parce');
     }
 
     /**

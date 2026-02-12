@@ -26,6 +26,11 @@ defined('MOODLE_INTERNAL') || die();
 
 $callbacks = [
     [
+        'hook' => \core\hook\output\before_http_headers::class,
+        'callback' => 'local_parce\hooks\output::before_http_headers',
+        'priority' => 100,
+    ],
+    [
         'hook' => \core\hook\output\before_footer_html_generation::class,
         'callback' => 'local_parce\hooks\output::inject_chat_bubble',
         'priority' => 0,

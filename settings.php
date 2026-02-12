@@ -74,5 +74,46 @@ if ($hassiteconfig) {
         get_string('default_answer_question_prompt', 'local_parce')
     ));
 
+    // Allow the answer to be openly sought in AI.
+    $settings->add(new admin_setting_configcheckbox(
+        'local_parce/allowopenanswer',
+        get_string('setting_allowopenanswer', 'local_parce'),
+        get_string('setting_allowopenanswer_desc', 'local_parce'),
+        0
+    ));
+
+    // The additional prompt when openly searching for the answer is enabled.
+    $settings->add(new admin_setting_configtextarea(
+        'local_parce/openanswer_prompt',
+        get_string('setting_openanswer_prompt', 'local_parce'),
+        get_string('setting_openanswer_prompt_desc', 'local_parce'),
+        ''
+    ));
+
+    // Conversation cache settings heading.
+    $settings->add(new admin_setting_heading(
+        'local_parce/cache_heading',
+        get_string('setting_cache_heading', 'local_parce'),
+        get_string('setting_cache_heading_desc', 'local_parce')
+    ));
+
+    // Conversation cache time to live (TTL) in seconds.
+    $settings->add(new admin_setting_configtext(
+        'local_parce/cache_ttl',
+        get_string('setting_cache_ttl', 'local_parce'),
+        get_string('setting_cache_ttl_desc', 'local_parce'),
+        3600,
+        PARAM_INT
+    ));
+
+    // Conversation cache maximum entries per conversation.
+    $settings->add(new admin_setting_configtext(
+        'local_parce/cache_maxentries',
+        get_string('setting_cache_maxentries', 'local_parce'),
+        get_string('setting_cache_maxentries_desc', 'local_parce'),
+        50,
+        PARAM_INT
+    ));
+
     $ADMIN->add('localplugins', $settings);
 }

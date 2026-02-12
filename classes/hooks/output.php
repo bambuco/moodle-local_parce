@@ -30,6 +30,25 @@ use core\hook\output\before_footer_html_generation;
  * Hook callbacks for output events
  */
 class output {
+    /**
+     * Load marked.js library before HTTP headers are sent.
+     * This ensures the library is available for AMD modules.
+     *
+     * @param \core\hook\before_http_headers $hook The hook object
+     */
+    public static function before_http_headers(\core\hook\output\before_http_headers $hook): void {
+        global $PAGE;
+
+        if (!\local_parce\local\controller::chat_included()) {
+            return;
+        }
+
+        // Load marked.js library for markdown parsing
+        $PAGE->requires->js(new \moodle_url('/local/parce/lib/marked/marked.min.js'), true);
+
+        // Initialize the chat module
+        $PAGE->requires->js_call_amd('local_parce/chat', 'init');
+    }
 
     /**
      * Inject the chat bubble HTML before footer generation.
@@ -39,24 +58,8 @@ class output {
     public static function inject_chat_bubble(before_footer_html_generation $hook): void {
         global $PAGE, $COURSE;
 
-        // Check if the plugin is enabled. Default to enabled if not configured.
-        $enabled = get_config('local_parce', 'enabled');
-        if (!$enabled) {
+        if (!\local_parce\local\controller::chat_included()) {
             return;
-        }
-
-        // Check user permissions.
-        $allowguests = get_config('local_parce', 'enable_guests');
-        if (!isloggedin() || (isguestuser() && !$allowguests)) {
-            return;
-        }
-
-        if ($COURSE->id != SITEID) {
-            // Check capability.
-            $context = \context_course::instance($COURSE->id);
-            if (!has_capability('local/parce:usechat', $context)) {
-                return;
-            }
         }
 
         // Inject the chat bubble HTML directly.
@@ -65,7 +68,6 @@ class output {
             'chat_title' => get_config('local_parce', 'chat_title') ?? get_string('defaulttitle', 'local_parce'),
         ];
         $html = $renderer->render_from_template('local_parce/chat_bubble', $renderdata);
-        $PAGE->requires->js_call_amd('local_parce/chat', 'init');
 
         $hook->add_html($html);
     }

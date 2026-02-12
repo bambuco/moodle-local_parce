@@ -1,3 +1,18 @@
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
 /**
  * Local Parce - Chat UI Module
  *
@@ -86,7 +101,7 @@ define(['jquery', 'core/log'], function($, Log) {
             var messageClass = 'local_parce-message-' + (type || 'bot');
             var messageHtml = '<div class="local_parce-message ' + messageClass + '">' +
                 '<div class="local_parce-message-content">' +
-                    this.escapeHtml(message) +
+                    (type == 'bot' ? this.sanitizeBotMessage(message) : this.escapeHtml(message)) +
                 '</div>' +
             '</div>';
 
@@ -155,7 +170,47 @@ define(['jquery', 'core/log'], function($, Log) {
                 '"': '&quot;',
                 "'": '&#039;'
             };
-            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+            return text.replace(/[&<>"']/g, function(m) {
+                return map[m];
+            });
+        },
+
+        /**
+         * Sanitize bot messages to prevent XSS attacks
+         *
+         * Removes dangerous HTML tags and event handlers while preserving safe HTML
+         * markup (bold, italic, links, code blocks, etc.) from markdown rendering.
+         * This provides a second layer of protection after backend sanitization.
+         *
+         * @param {string} message - The message to sanitize
+         * @return {string} Sanitized message
+         */
+        sanitizeBotMessage: function(message) {
+            if (!message || typeof message !== 'string') {
+                return '';
+            }
+
+            var sanitized = message;
+
+            // Remove script tags and their content
+            sanitized = sanitized.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+
+            // Remove event handlers (onclick, onerror, onload, onmouseover, etc.)
+            sanitized = sanitized.replace(/\s*on\w+\s*=\s*["\']?[^\s"\'>`]*["\']?/gi, '');
+
+            // Remove iframe tags (potential security risk)
+            sanitized = sanitized.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '');
+
+            // Remove object and embed tags (potential security risk)
+            sanitized = sanitized.replace(/<(object|embed|applet)[^>]*>[\s\S]*?<\/(object|embed|applet)>/gi, '');
+
+            // Remove javascript: protocol from href and src attributes
+            sanitized = sanitized.replace(/javascript\s*:/gi, '');
+
+            // Remove style tags and their content
+            sanitized = sanitized.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+
+            return sanitized;
         }
     };
 

@@ -1,3 +1,18 @@
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+
 /**
  * Local Parce - Chat Handler Module
  *
@@ -9,7 +24,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function($, Log, Str, Ajax, ChatUI) {
+define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui', 'local_parce/markdown-renderer'],
+    function($, Log, Str, Ajax, ChatUI, MarkdownRenderer) {
     'use strict';
 
     // Load strings.
@@ -58,7 +74,8 @@ define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], f
          * Initialize the chat handler.
          */
         init: function() {
-            // Handler initialization if needed.
+            // Initialize markdown renderer if needed
+            MarkdownRenderer.init();
         },
 
         /**
@@ -85,12 +102,19 @@ define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], f
             // Call the backend service.
             this.submitQuestion(message).then(function(response) {
                 ChatUI.hideLoading();
+
                 if (response && response.answer) {
-                    ChatUI.addMessage(response.answer, 'bot');
+                    // Check if response contains markdown and render it
+                    var answer = response.answer;
+                    if (MarkdownRenderer.isMarkdown(answer)) {
+                        answer = MarkdownRenderer.render(answer);
+                    }
+                    ChatUI.addMessage(answer, 'bot');
                 } else {
                     ChatUI.addMessage(s.chat_error_processing, 'bot');
                 }
                 self.isSending = false;
+                return true;
             }).catch(function(error) {
                 ChatUI.hideLoading();
                 ChatUI.addMessage(s.chat_error, 'bot');

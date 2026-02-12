@@ -29,7 +29,6 @@ use core_external\external_value;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class answer extends external_api {
-
     /**
      * Describes the parameters for local_parce_answer
      *
@@ -38,7 +37,7 @@ class answer extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'question' => new external_value(PARAM_RAW, 'Question from the user'),
-            'contextid' => new external_value(PARAM_INT, 'Context ID for capability checks and answer generation', VALUE_DEFAULT, 1),
+            'contextid' => new external_value(PARAM_INT, 'Current context', VALUE_DEFAULT, 1),
         ]);
     }
 
@@ -66,7 +65,12 @@ class answer extends external_api {
         require_capability('local/parce:usechat', $context);
 
         // Process the question using the question handler.
-        $answer = \local_parce\local\question_handler::process($question, $contextid);
+        $answer = \local_parce\local\question_handler::process($question, $context);
+
+        // Sanitize the answer to prevent XSS attacks
+        // Strip dangerous tags and event handlers while preserving safe HTML
+        $answer = \core_text::entities_to_utf8($answer);
+        $answer = strip_tags($answer);
 
         return [
             'answer' => $answer,

@@ -21,37 +21,3 @@
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-
-defined('MOODLE_INTERNAL') || die();
-
-/**
- * Hook called when the page is initialized.
- * Injects the chat widget resources into all pages.
- *
- * @param moodle_page $page The page object
- */
-function local_parce_page_init(moodle_page $page) {
-    global $USER;
-
-    // Check if the plugin is enabled. Default to enabled if not configured.
-    $enabled = get_config('local_parce', 'enabled');
-    if ($enabled === false) {
-        $enabled = 1; // Default enabled
-    }
-    if (!$enabled) {
-        return;
-    }
-
-    // Check user permissions.
-    $allow_guests = get_config('local_parce', 'enable_guests');
-    if (!isloggedin() || (isguestuser() && !$allow_guests)) {
-        return;
-    }
-
-    // Add jQuery requirement.
-    $page->requires->jquery();
-
-    // CSS is injected directly in the hook, no need to load here.
-    // Initialize the chat module.
-    $page->requires->js_call_amd('local_parce/chat', 'init', []);
-}

@@ -24,23 +24,10 @@
 
 namespace local_parce\output;
 
-defined('MOODLE_INTERNAL') || die();
-
 use plugin_renderer_base;
 
 /**
  * Renderer for local_parce templates and output
  */
 class renderer extends plugin_renderer_base {
-
-    /**
-     * Render a template with the given context data.
-     *
-     * @param string $template The template name
-     * @param array $context The context data
-     * @return string The rendered HTML
-     */
-    public function render_from_template($template, $context = []) {
-        return parent::render_from_template($template, $context);
-    }
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<libraries>
+    <library>
+        <name>marked</name>
+        <version>11.1.1</version>
+        <location>lib/marked</location>
+        <license>MIT</license>
+        <licenseversion></licenseversion>
+        <description>A markdown parser and compiler built for speed. Easy to extend and access HTML parsing and compiling features.</description>
+        <repository>https://github.com/markedjs/marked</repository>
+        <copyrights>
+            <copyright>2011-2024 Christopher Jeffrey and contributors</copyright>
+        </copyrights>
+    </library>
+</libraries>
