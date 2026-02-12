@@ -116,7 +116,12 @@ class question_handler {
 
             // Time 2: Get the response based on the intention.
             $type = @json_decode($generatedcontent, true);
-            $intentclass = '\local_parce\local\intent\\' . $type['type'] ?? 'base';
+
+            $intentavailable = ['content', 'greeting', 'base'];
+            if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
+                return get_string('error_processing_question', 'local_parce');
+            }
+            $intentclass = '\local_parce\local\intent\\' . $type['type'];
 
             if (!class_exists($intentclass)) {
                 return get_string('error_processing_question', 'local_parce');

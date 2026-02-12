@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * TODO describe file test
+ * Used to test the intent classes and their content retrieval logic.
  *
  * @package    local_parce
  * @copyright  2026 David Herney @ BambuCo

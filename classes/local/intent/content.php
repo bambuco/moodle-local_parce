@@ -139,17 +139,23 @@ class content extends base {
         // A temporary impersonation of the user is needed because the Search API does
         // not take into account the user being filtered with.
         $tmpuser = clone($USER);
-        $results = [];
-        if ($this->user->id != $USER->id) {
-            $USER = $this->user;
-        }
-        $results = $searchmanager->search($data);
+        try {
+            $results = [];
+            if ($this->user->id != $USER->id) {
+                $USER = $this->user;
+            }
+            $results = $searchmanager->search($data);
 
-        if (empty($coursecontext)) {
-            // Search in the public area.
-            $USER = new \stdClass();
-            $USER->id = 0;
-            $results += $searchmanager->search($data);
+            if (empty($coursecontext)) {
+                // Search in the public area.
+                $USER = new \stdClass();
+                $USER->id = 0;
+                $results += $searchmanager->search($data);
+            }
+        } catch (\Exception $e) {
+            // Restore the original user before throwing the exception.
+            $USER = $tmpuser;
+            throw $e;
         }
 
         // Restore the original user.

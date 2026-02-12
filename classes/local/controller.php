@@ -88,6 +88,8 @@ class controller
         $ttl = get_config('local_parce', 'cache_ttl');
         $maxentries = get_config('local_parce', 'cache_maxentries');
 
+        // ToDo: Use ttl in cache definition and implement cache cleanup based on ttl.
+        // Currently, ttl is not enforced in the cache implementation.
         return [
             'ttl' => $ttl !== false ? (int)$ttl : 3600,
             'maxentries' => $maxentries !== false ? (int)$maxentries : 50,
@@ -106,6 +108,34 @@ class controller
     }
 
     /**
+     * Register a chatid for a specific user in the index.
+     *
+     * Maintains an index of all chatids used by a user to enable
+     * efficient deletion of only that user's conversations without
+     * affecting other users' cache data.
+     *
+     * @param int $userid The user ID
+     * @param int $chatid The chat ID to register
+     * @return void
+     */
+    private static function register_user_chatid(int $userid, int $chatid): void {
+        $cache = self::get_cache();
+        $indexkey = "user_chatids_{$userid}";
+
+        // Get the existing index for this user.
+        $chatids = $cache->get($indexkey);
+        if ($chatids === false) {
+            $chatids = [];
+        }
+
+        // Add chatid if not already in the index.
+        if (!in_array($chatid, $chatids)) {
+            $chatids[] = $chatid;
+            $cache->set($indexkey, $chatids);
+        }
+    }
+
+    /**
      * Store a conversation entry (question and response) in cache.
      *
      * @param int $userid The user ID
@@ -118,6 +148,9 @@ class controller
         $cache = self::get_cache();
         $config = self::get_cache_config();
         $key = self::get_cache_key($userid, $chatid);
+
+        // Register this chatid in the user's index for later cleanup
+        self::register_user_chatid($userid, $chatid);
 
         $data = $cache->get($key);
         if ($data === false) {
@@ -208,12 +241,28 @@ class controller
     /**
      * Clear all conversations for a specific user.
      *
+     * Deletes only the conversations belonging to the specified user,
+     * without affecting other users' cached conversation data.
+     *
      * @param int $userid The user ID
      * @return void
      */
     public static function clear_user_conversations(int $userid): void {
         $cache = self::get_cache();
-        $cache->purge();
+        $indexkey = "user_chatids_{$userid}";
+
+        // Get the list of chatids for this user.
+        $chatids = $cache->get($indexkey);
+
+        if ($chatids !== false && is_array($chatids)) {
+            // Delete each conversation individually (not affecting other users).
+            foreach ($chatids as $chatid) {
+                $key = self::get_cache_key($userid, $chatid);
+                $cache->delete($key);
+            }
+            // Delete the user's index.
+            $cache->delete($indexkey);
+        }
     }
 
     /**
@@ -228,12 +277,7 @@ class controller
      * @param int $limit Number of entries to return. 0 = all entries
      * @return array Array with 'entries', 'total', 'offset', 'limit', 'hasmore' keys
      */
-    public static function get_conversation_entries_paginated(
-        int $userid,
-        int $chatid,
-        int $offset = 0,
-        int $limit = 20
-    ): array {
+    public static function get_conversation_entries_paginated(int $userid, int $chatid, int $offset = 0, int $limit = 20): array {
         $allentries = self::get_conversation_entries($userid, $chatid);
         $total = count($allentries);
 

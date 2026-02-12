@@ -75,6 +75,10 @@ class answer extends external_api {
         // Strip dangerous tags and event handlers while preserving safe HTML.
         $answer = \core_text::entities_to_utf8($answer);
         $answer = strip_tags($answer);
+        $answer = format_text($answer, FORMAT_HTML, [
+            'noclean' => false,
+            'para' => false,
+        ]);
 
         if (trim($answer) == 'NOT_FOUND') {
             $answer = get_string('answer_notfound', 'local_parce');
@@ -107,7 +111,7 @@ class answer extends external_api {
      */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
-            'answer' => new external_value(PARAM_RAW, 'The answer to the user question'),
+            'answer' => new external_value(PARAM_TEXT, 'The answer to the user question'),
         ]);
     }
 }
