@@ -37,9 +37,9 @@ class output {
      * @param \core\hook\before_http_headers $hook The hook object
      */
     public static function before_http_headers(\core\hook\output\before_http_headers $hook): void {
-        global $PAGE;
+        global $PAGE, $COURSE;
 
-        if (!\local_parce\local\controller::chat_included()) {
+        if (!\local_parce\local\controller::chat_include()) {
             return;
         }
 
@@ -47,7 +47,7 @@ class output {
         $PAGE->requires->js(new \moodle_url('/local/parce/lib/marked/marked.min.js'), true);
 
         // Initialize the chat module
-        $PAGE->requires->js_call_amd('local_parce/chat', 'init');
+        $PAGE->requires->js_call_amd('local_parce/chat', 'init', [$COURSE->id]);
     }
 
     /**
@@ -56,9 +56,9 @@ class output {
      * @param before_footer_html_generation $hook The hook object
      */
     public static function inject_chat_bubble(before_footer_html_generation $hook): void {
-        global $PAGE, $COURSE;
+        global $PAGE;
 
-        if (!\local_parce\local\controller::chat_included()) {
+        if (!\local_parce\local\controller::chat_include()) {
             return;
         }
 

@@ -77,6 +77,13 @@ class content extends base {
         return true;
     }
 
+    /**
+     * Perform a search based on the provided keywords and resource types.
+     *
+     * @param string $search The search keywords.
+     * @param array $resourcetype Optional array of resource types to filter the search.
+     * @return string JSON encoded string of found resources or an error message if search is unavailable
+     */
     private function get_search(string $search, array $resourcetype = []): string {
         global $USER;
 

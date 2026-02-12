@@ -16,10 +16,12 @@
 
 namespace local_parce\external;
 
+use core_analytics\site;
 use core_external\external_function_parameters;
 use core_external\external_single_structure;
 use core_external\external_api;
 use core_external\external_value;
+use local_parce\local\controller;
 
 /**
  * Implementation of web service local_parce_answer
@@ -51,6 +53,8 @@ class answer extends external_api {
      * @return array Array containing the answer
      */
     public static function execute(string $question, int $contextid = 1): array {
+        global $USER;
+
         // Parameter validation.
         ['question' => $question, 'contextid' => $contextid] = self::validate_parameters(
             self::execute_parameters(),
@@ -71,6 +75,25 @@ class answer extends external_api {
         // Strip dangerous tags and event handlers while preserving safe HTML
         $answer = \core_text::entities_to_utf8($answer);
         $answer = strip_tags($answer);
+
+        if (trim($answer) == 'NOT_FOUND') {
+            $answer = get_string('answer_notfound', 'local_parce');
+        }
+
+        $coursecontext = $context->get_course_context(false);
+        if ($coursecontext) {
+            $chatid = $coursecontext->id;
+        } else {
+            $chatid = SITEID;
+        }
+
+        // Save message in cache.
+        controller::store_conversation(
+            userid: $USER->id,
+            chatid: $chatid,
+            question: $question,
+            response: $answer
+        );
 
         return [
             'answer' => $answer,

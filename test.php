@@ -15,32 +15,31 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * External functions and service declaration for Parce - Q&A Chat Widget
- *
- * Documentation: {@link https://moodledev.io/docs/apis/subsystems/external/description}
+ * TODO describe file test
  *
  * @package    local_parce
- * @category   webservice
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+require('../../config.php');
 
-$functions = [
-    'local_parce_answer' => [
-        'classname' => local_parce\external\answer::class,
-        'description' => 'Receive a users question and search for an answer.',
-        'type' => 'read',
-        'ajax' => true,
-        'capabilities' => 'local/parce:usechat',
-    ],
+require_login();
 
-    'local_parce_get_conversation' => [
-        'classname' => local_parce\external\get_conversation::class,
-        'description' => 'Get paginated chat conversation history.',
-        'type' => 'read',
-        'ajax' => true,
-        'capabilities' => 'local/parce:usechat',
-    ],
-];
+$url = new moodle_url('/local/parce/test.php', []);
+$PAGE->set_url($url);
+$PAGE->set_context(context_system::instance());
+
+$PAGE->set_heading($SITE->fullname);
+echo $OUTPUT->header();
+
+$context = context_system::instance();
+$intentparams = ['moodle'];
+$intentobj = new \local_parce\local\intent\content($context, null, $intentparams);
+
+$a = $intentobj->get_content();
+
+//echo '<pre>';
+var_dump($a);
+
+echo $OUTPUT->footer();

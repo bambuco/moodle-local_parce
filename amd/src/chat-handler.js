@@ -109,15 +109,15 @@ define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui', 'l
                     if (MarkdownRenderer.isMarkdown(answer)) {
                         answer = MarkdownRenderer.render(answer);
                     }
-                    ChatUI.addMessage(answer, 'bot');
+                    ChatUI.addMessage(answer, 'system');
                 } else {
-                    ChatUI.addMessage(s.chat_error_processing, 'bot');
+                    ChatUI.addMessage(s.chat_error_processing, 'system');
                 }
                 self.isSending = false;
                 return true;
             }).catch(function(error) {
                 ChatUI.hideLoading();
-                ChatUI.addMessage(s.chat_error, 'bot');
+                ChatUI.addMessage(s.chat_error, 'system');
                 Log.debug('Chat error:', error);
                 self.isSending = false;
             });

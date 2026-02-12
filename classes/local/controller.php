@@ -25,13 +25,14 @@ namespace local_parce\local;
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class controller {
+class controller
+{
     /**
      * Check if the chat component should be included on the page.
      *
      * @return bool True if the chat should be included, false otherwise
      */
-    public static function chat_included(): bool {
+    public static function chat_include(): bool {
         global $COURSE;
 
         static $included = null;
@@ -52,12 +53,15 @@ class controller {
             return false;
         }
 
+        // Check capability.
         if ($COURSE->id != SITEID) {
-            // Check capability.
             $context = \context_course::instance($COURSE->id);
-            if (!has_capability('local/parce:usechat', $context)) {
-                return false;
-            }
+        } else {
+            $context = \context_system::instance();
+        }
+
+        if (!has_capability('local/parce:usechat', $context)) {
+            return false;
         }
 
         $included = true;
@@ -210,5 +214,74 @@ class controller {
     public static function clear_user_conversations(int $userid): void {
         $cache = self::get_cache();
         $cache->purge();
+    }
+
+    /**
+     * Get conversation entries with pagination support.
+     *
+     * Returns a paginated set of conversation entries, ordered from newest to oldest.
+     * If limit is 0, returns all entries.
+     *
+     * @param int $userid The user ID
+     * @param int $chatid The chat ID (can be course ID or other context identifier)
+     * @param int $offset Number of entries to skip from the end (newest first)
+     * @param int $limit Number of entries to return. 0 = all entries
+     * @return array Array with 'entries', 'total', 'offset', 'limit', 'hasmore' keys
+     */
+    public static function get_conversation_entries_paginated(
+        int $userid,
+        int $chatid,
+        int $offset = 0,
+        int $limit = 20
+    ): array {
+        $allentries = self::get_conversation_entries($userid, $chatid);
+        $total = count($allentries);
+
+        // Reverse to get newest first, apply offset and limit.
+        $reversed = array_reverse($allentries, true);
+        $paginated = ($limit > 0) ? array_slice($reversed, $offset, $limit) : $reversed;
+
+        // Re-reverse to maintain original chronological order in response.
+        $entries = array_reverse($paginated, true);
+
+        return [
+            'entries' => array_values($entries),
+            'total' => $total,
+            'offset' => $offset,
+            'limit' => $limit,
+            'hasmore' => ($offset + count($entries)) < $total,
+        ];
+    }
+
+    /**
+     * Format a timestamp for display in chat UI.
+     *
+     * Returns a human-readable timestamp format appropriate for the chat interface.
+     *
+     * @param int $timestamp Unix timestamp to format
+     * @return string Formatted timestamp for display (e.g., "14:30", "Today 14:30", "15 Jan")
+     */
+    public static function format_timestamp(int $timestamp): string {
+        $timestamp = $timestamp ?? time();
+
+        $strftimetime = get_string('strftimetime24', 'langconfig');
+        // Same day - show only time.
+        if (date('Y-m-d') === date('Y-m-d', $timestamp)) {
+            return userdate($timestamp, $strftimetime);
+        }
+
+        // Yesterday.
+        if (date('Y-m-d', strtotime('-1 day')) === date('Y-m-d', $timestamp)) {
+            $yesterday = get_string('yesterday', 'local_parce', userdate($timestamp, $strftimetime));
+            return $yesterday;
+        }
+
+        // Same year - show month and day.
+        if (date('Y') === date('Y', $timestamp)) {
+            return userdate($timestamp, get_string('strftimedateshortmonthabbr', 'langconfig'));
+        }
+
+        // Different year - show full date.
+        return userdate($timestamp, get_string('strftimedatemonthabbr', 'langconfig'));
     }
 }

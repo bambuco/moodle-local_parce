@@ -37,4 +37,13 @@ $capabilities = [
         ],
         'clonepermissionsfrom' => 'moodle/site:configview',
     ],
+    // Capability to view chat history of all users.
+    'local/parce:viewallchats' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_SYSTEM,
+        'archetypes' => [
+            'manager' => CAP_ALLOW,
+        ],
+        'clonepermissionsfrom' => 'moodle/site:viewreports',
+    ],
 ];

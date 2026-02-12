@@ -24,26 +24,41 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['jquery', 'core/log'], function($, Log) {
+define(['jquery', 'core/log', 'core/ajax'], function ($, Log, Ajax) {
     'use strict';
 
     var ChatUI = {
         isWindowOpen: false,
+        isLoadingHistory: false,
+        hasLoadedHistory: false,
+        hasMoreHistory: true,
+        currentOffset: 0,
+        historyLimit: 10,
+        chatid: null,
 
         /**
          * Initialize the chat UI.
          * Creates and injects the chat window template if not already present.
+         * Restores the previous visible/hidden state from localStorage.
+         *
+         * @param {number} chatid - The chat ID (typically course ID)
          */
-        init: function() {
-            // The chat bubble should already be injected via the template.
-            // We just need to show the chat window container.
+        init: function (chatid) {
+            this.chatid = chatid;
             Log.debug('Parce: Chat UI initialized');
+            this.setupScrollListener();
+
+            // Restore previous visibility state from localStorage.
+            var savedState = localStorage.getItem('local_parce_chat_open');
+            if (savedState === 'true') {
+                this.openWindow();
+            }
         },
 
         /**
          * Toggle the chat window visibility.
          */
-        toggleWindow: function() {
+        toggleWindow: function () {
             if (this.isWindowOpen) {
                 this.closeWindow();
             } else {
@@ -53,32 +68,47 @@ define(['jquery', 'core/log'], function($, Log) {
 
         /**
          * Open the chat window.
+         * Loads conversation history on first open and persists state to localStorage.
          */
-        openWindow: function() {
+        openWindow: function () {
             var container = $('#local_parce-chat-window-container');
             if (container.length > 0) {
                 container.addClass('local_parce-visible');
                 this.isWindowOpen = true;
+
+                // Persist visibility state to localStorage.
+                localStorage.setItem('local_parce_chat_open', 'true');
+
+                // Load conversation history on first open.
+                if (!this.hasLoadedHistory) {
+                    this.loadConversationHistory(0);
+                    this.hasLoadedHistory = true;
+                }
+
                 this.focusInputField();
             }
         },
 
         /**
          * Close the chat window.
+         * Persists closed state to localStorage.
          */
-        closeWindow: function() {
+        closeWindow: function () {
             var container = $('#local_parce-chat-window-container');
             if (container.length > 0) {
                 container.removeClass('local_parce-visible');
                 this.isWindowOpen = false;
+
+                // Persist visibility state to localStorage.
+                localStorage.setItem('local_parce_chat_open', 'false');
             }
         },
 
         /**
          * Focus the message input field.
          */
-        focusInputField: function() {
-            setTimeout(function() {
+        focusInputField: function () {
+            setTimeout(function () {
                 $('.local_parce-message-input').focus();
             }, 100);
         },
@@ -87,9 +117,9 @@ define(['jquery', 'core/log'], function($, Log) {
          * Add a message to the chat window.
          *
          * @param {string} message - The message text
-         * @param {string} type - The message type: 'user' or 'bot'
+         * @param {string} type - The message type: 'user' or 'system'
          */
-        addMessage: function(message, type) {
+        addMessage: function (message, type) {
             var container = $('#local_parce-messages-container');
             if (container.length === 0) {
                 return;
@@ -98,12 +128,16 @@ define(['jquery', 'core/log'], function($, Log) {
             // Remove welcome message if present.
             container.find('.local_parce-message-welcome').remove();
 
-            var messageClass = 'local_parce-message-' + (type || 'bot');
+            var now = new Date();
+            var timestamp = '<span class="local_parce-message-timestamp">' +
+                this.formatTime(now) + '</span>';
+            var messageClass = 'local_parce-message-' + (type || 'system');
             var messageHtml = '<div class="local_parce-message ' + messageClass + '">' +
                 '<div class="local_parce-message-content">' +
-                    (type == 'bot' ? this.sanitizeBotMessage(message) : this.escapeHtml(message)) +
+                (type == 'system' ? this.sanitizeBotMessage(message) : this.escapeHtml(message)) +
                 '</div>' +
-            '</div>';
+                timestamp +
+                '</div>';
 
             container.append(messageHtml);
 
@@ -114,7 +148,7 @@ define(['jquery', 'core/log'], function($, Log) {
         /**
          * Show loading indicator in the chat window.
          */
-        showLoading: function() {
+        showLoading: function () {
             const container = $('#local_parce-messages-container');
             if (container.length === 0) {
                 return;
@@ -129,14 +163,14 @@ define(['jquery', 'core/log'], function($, Log) {
         /**
          * Remove the loading indicator.
          */
-        hideLoading: function() {
+        hideLoading: function () {
             $('#local_parce-messages-container .local_parce-message-loading').remove();
         },
 
         /**
          * Clear all messages from the chat window.
          */
-        clearMessages: function() {
+        clearMessages: function () {
             const container = $('#local_parce-messages-container');
             if (container.length > 0) {
                 const welcomeMessage = container.find('.local_parce-message-welcome').prop('outerHTML');
@@ -147,10 +181,10 @@ define(['jquery', 'core/log'], function($, Log) {
         /**
          * Scroll the message container to the bottom.
          */
-        scrollToBottom: function() {
+        scrollToBottom: function () {
             var container = $('#local_parce-messages-container');
             if (container.length > 0) {
-                setTimeout(function() {
+                setTimeout(function () {
                     container.scrollTop(container[0].scrollHeight);
                 }, 100);
             }
@@ -162,7 +196,7 @@ define(['jquery', 'core/log'], function($, Log) {
          * @param {string} text - The text to escape
          * @return {string} Escaped text
          */
-        escapeHtml: function(text) {
+        escapeHtml: function (text) {
             var map = {
                 '&': '&amp;',
                 '<': '&lt;',
@@ -170,7 +204,7 @@ define(['jquery', 'core/log'], function($, Log) {
                 '"': '&quot;',
                 "'": '&#039;'
             };
-            return text.replace(/[&<>"']/g, function(m) {
+            return text.replace(/[&<>"']/g, function (m) {
                 return map[m];
             });
         },
@@ -185,7 +219,7 @@ define(['jquery', 'core/log'], function($, Log) {
          * @param {string} message - The message to sanitize
          * @return {string} Sanitized message
          */
-        sanitizeBotMessage: function(message) {
+        sanitizeBotMessage: function (message) {
             if (!message || typeof message !== 'string') {
                 return '';
             }
@@ -211,6 +245,104 @@ define(['jquery', 'core/log'], function($, Log) {
             sanitized = sanitized.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
 
             return sanitized;
+        },
+
+        /**
+         * Load conversation history from cache via web service.
+         *
+         * @param {number} offset - Pagination offset for loading older messages
+         */
+        loadConversationHistory: function (offset) {
+            if (this.isLoadingHistory || !this.chatid) {
+                return;
+            }
+
+            this.isLoadingHistory = true;
+
+            Ajax.call([{
+                methodname: 'local_parce_get_conversation',
+                args: {
+                    chatid: this.chatid,
+                    offset: offset,
+                    limit: this.historyLimit
+                },
+                done: function (response) {
+                    ChatUI.renderHistoryEntries(response.entries);
+                    ChatUI.currentOffset = offset + response.entries.length;
+                    ChatUI.hasMoreHistory = response.hasmore;
+                    ChatUI.isLoadingHistory = false;
+
+                    if (offset === 0) {
+                        ChatUI.scrollToBottom();
+                    }
+                },
+                fail: function (error) {
+                    Log.error('Error loading chat history: ' + error);
+                    ChatUI.isLoadingHistory = false;
+                }
+            }]);
+        },
+
+        /**
+         * Render conversation history entries to the chat window.
+         *
+         * @param {array} entries - Array of conversation entry objects
+         */
+        renderHistoryEntries: function (entries) {
+            var container = $('#local_parce-messages-container');
+            if (container.length === 0) {
+                return;
+            }
+
+            // Remove welcome message if present and there are history entries to show.
+            if (entries.length > 0) {
+                container.find('.local_parce-message-welcome').remove();
+            }
+
+            // Reverse entries to maintain chronological order when using prepend.
+            entries = entries.reverse();
+
+            entries.forEach(function (entry) {
+                var messageClass = 'local_parce-message-' + entry.role;
+                var timestamp = '<span class="local_parce-message-timestamp">' +
+                    entry.timestamp_formatted + '</span>';
+                var content = entry.role === 'user' ?
+                    ChatUI.escapeHtml(entry.content) :
+                    ChatUI.sanitizeBotMessage(entry.content);
+
+                var messageHtml = '<div class="local_parce-message ' + messageClass + '">' +
+                    '<div class="local_parce-message-content">' + content + '</div>' +
+                    timestamp +
+                    '</div>';
+
+                container.prepend(messageHtml);
+            });
+        },
+
+        /**
+         * Setup scroll listener to load older messages when scrolling to top.
+         * Detects when user scrolls near the top and loads more messages if available.
+         */
+        setupScrollListener: function () {
+            var self = this;
+            $('#local_parce-messages-container').on('scroll', function () {
+                // Detect when near top (scrollTop < 50 instead of === 0 for better UX).
+                if (this.scrollTop < 50 && !self.isLoadingHistory && self.hasMoreHistory) {
+                    self.loadConversationHistory(self.currentOffset);
+                }
+            });
+        },
+
+        /**
+         * Format a date object to HH:MM format.
+         *
+         * @param {Date} date - The date to format
+         * @return {string} Formatted time string (HH:MM)
+         */
+        formatTime: function (date) {
+            var hours = String(date.getHours()).padStart(2, '0');
+            var minutes = String(date.getMinutes()).padStart(2, '0');
+            return hours + ':' + minutes;
         }
     };
 

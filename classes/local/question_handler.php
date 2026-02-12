@@ -51,8 +51,12 @@ class question_handler {
             return get_string('error_empty_question', 'local_parce');
         }
 
-        if (empty($context)) {
+        $coursecontext = $context->get_course_context(false);
+        if (empty($context) || empty($coursecontext)) {
             $context = \context_system::instance();
+            $chatid = SITEID;
+        } else {
+            $chatid = $coursecontext->id;
         }
 
         try {
@@ -78,16 +82,14 @@ class question_handler {
             }
 
             // Time 1: Get the real intention of the question.
-            $hackquestion = new \stdClass();
-            $hackquestion->question = $question;
-            $hackquestion->previous = []; // ToDo: manejar el contexto de la conversación.
-            $jsonquestion = json_encode($hackquestion);
+            $previous = self::get_conversation_context($USER->id, $chatid);
+            $hackquestion = self::make_hackquestion($question, $previous);
 
             // Create the appropriate action with the user's question.
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
-                prompttext: $jsonquestion
+                prompttext: $hackquestion
             );
 
             $prompt = get_config('local_parce', 'question_plan_prompt');
@@ -105,7 +107,7 @@ class question_handler {
                 $responsedata = $response->get_response_data();
 
                 if (empty($responsedata['generatedcontent'])) {
-                    return get_string('error_no_content', 'local_parce');
+                    return self::pre_response($question, get_string('error_no_content', 'local_parce'));
                 }
                 $generatedcontent = $responsedata['generatedcontent'];
             } else {
@@ -127,19 +129,19 @@ class question_handler {
             $intentobj = new $intentclass($context, null, $intentparams);
 
             if (!$intentobj->require_ia()) {
-                return $intentobj->get_content();
+                return self::pre_response($question, $intentobj->get_content());
             }
 
             try {
                 $content = $intentobj->get_content();
             } catch (\Exception $e) {
-                return $e->getMessage();
+                return self::pre_response($question, $e->getMessage());
             }
 
             if (empty($content)) {
                 $allowopenanswer = get_config('local_parce', 'allowopenanswer');
                 if (!$allowopenanswer) {
-                    return get_string('msg_no_content', 'local_parce');
+                    return self::pre_response($question, get_string('msg_no_content', 'local_parce'));
                 }
 
                 $content = get_config('local_parce', 'openanswer_prompt');
@@ -149,22 +151,19 @@ class question_handler {
                 }
             }
 
-            $hackquestion = new \stdClass();
-            $hackquestion->question = $question;
-            $hackquestion->previous = [];
-            $hackquestion->content = $content;
-            $jsonquestion = json_encode($hackquestion);
+            $previous = self::get_conversation_context($USER->id, $chatid);
+            $hackquestion = self::make_hackquestion($question, $previous, $content);
 
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
-                prompttext: $jsonquestion
+                prompttext: $hackquestion
             );
 
             $actionprovider = new \aiprovider_bbco\process_generate_text($provider, $action);
             $actionprovider->prompt = get_config('local_parce', 'answer_question_prompt');
-            if (empty($prompt)) {
-                $prompt = get_string('default_answer_question_prompt', 'local_parce');
+            if (empty($actionprovider->prompt)) {
+                $actionprovider->prompt = get_string('default_answer_question_prompt', 'local_parce');
             }
 
             $response = $actionprovider->process();
@@ -175,18 +174,90 @@ class question_handler {
                 $responsedata = $response->get_response_data();
 
                 if (empty($responsedata['generatedcontent'])) {
-                    return get_string('error_no_content', 'local_parce');
+                    return self::pre_response($question, get_string('error_no_content', 'local_parce'));
                 }
                 $generatedcontent = $responsedata['generatedcontent'];
             } else {
                 return get_string('error_ai_failed', 'local_parce') . ': ' . $response->get_errormessage();
             }
 
-            return $generatedcontent;
+            return self::pre_response($question, $generatedcontent);
         } catch (\core\exception\coding_exception $e) {
             return get_string('error_ai_unavailable', 'local_parce');
         } catch (\Exception $e) {
             return get_string('error_processing_question', 'local_parce');
         }
+    }
+
+    /**
+     * Pre-process the AI response before returning it to the user.
+     * @param string $response The raw response from the AI.
+     * @return string The processed response to be returned to the user.
+     */
+    private static function pre_response(string $question, string $response): string {
+        return $response;
+    }
+
+    /**
+     * Get conversation context from cache.
+     *
+     * Retrieves the last 5 messages from the cached conversation to provide
+     * context for the AI model.
+     *
+     * @param int $userid The user ID
+     * @param int $chatid The chat ID (course ID)
+     * @return array Array of last 5 conversation entries with role and content
+     */
+    private static function get_conversation_context(int $userid, int $chatid): array {
+        $allentries = controller::get_conversation_entries($userid, $chatid);
+
+        if (empty($allentries)) {
+            return [];
+        }
+
+        // Get last 5 entries, keeping them in chronological order.
+        $lastfive = array_slice($allentries, -5);
+
+        // Format for AI context: only include role and content.
+        $context = [];
+        foreach ($lastfive as $entry) {
+            $context[] = [
+                'role' => $entry['role'],
+                'content' => $entry['content'],
+            ];
+        }
+
+        return $context;
+    }
+
+    /**
+     * Create a hack question format to send to the AI model, including the original question,
+     * previous conversation context, and any relevant content.
+     *
+     * This format allows the AI model to better understand the user's question in the context
+     * of the conversation and any relevant information, improving the quality of the response.
+     *
+     * @param string $question The original question from the user.
+     * @param array $previous The previous conversation context, formatted as an array of role/content pairs.
+     * @param string $content Any relevant content that should be included for the AI to generate a response.
+     * @return string The formatted hack question to send to the AI model.
+     */
+    private static function make_hackquestion(string $question, array $previous = [], string $content = ''): string {
+        $hackquestion = '<QUESTION_START>' . $question . '<QUESTION_END>';
+
+        if (!empty($previous)) {
+            $previoustext = '';
+            foreach ($previous as $entry) {
+                $previoustext .= '<ROLE_START>' . $entry['role'] . '<ROLE_END>';
+                $previoustext .= '<MESSAGE_START>' . $entry['content'] . '<MESSAGE_END>';
+            }
+            $hackquestion .= '<PREVIOUS_START>' . $previoustext . '<PREVIOUS_END>';
+        }
+
+        if (!empty($content)) {
+            $hackquestion .= '<CONTENT_START>' . $content . '<CONTENT_END>';
+        }
+
+        return $hackquestion;
     }
 }

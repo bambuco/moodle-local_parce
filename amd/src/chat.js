@@ -32,10 +32,15 @@ import ChatHandler from 'local_parce/chat-handler';
 
 /**
  * Component initialization.
+ *
+ * This function is called when the component is loaded. It sets up the chat UI and event handlers.
+ *
+ * @param {number} chatid - The ID of the chat instance to initialize
+ * @returns {Promise} A promise that resolves when initialization is complete
  */
-export const init = async() => {
+export const init = async(chatid) => {
     // Initialize the UI component.
-    ChatUI.init();
+    ChatUI.init(chatid);
 
     // Initialize event handlers.
     ChatHandler.init();
@@ -87,6 +92,7 @@ export const init = async() => {
 
             // Auto-resize message input.
             $(document).on('input', '.local_parce-message-input', function() {
+                this.style.height = '20px'; // Default height.
                 this.style.height = (this.scrollHeight) + 'px';
             });
 
