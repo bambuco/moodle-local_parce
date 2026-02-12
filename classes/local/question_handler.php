@@ -191,10 +191,14 @@ class question_handler {
 
     /**
      * Pre-process the AI response before returning it to the user.
+     *
+     * @param string $question The original question from the user.
      * @param string $response The raw response from the AI.
      * @return string The processed response to be returned to the user.
      */
     private static function pre_response(string $question, string $response): string {
+        // Here you can add any pre-processing steps needed before returning the response.
+        // For example, you could log the question and response, or perform additional formatting.
         return $response;
     }
 

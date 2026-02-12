@@ -28,7 +28,7 @@ class base {
      * Class constructor.
      *
      * @param \core\context $context Intention context.
-     * @param object $user The user for whom the intent is being processed.
+     * @param ?object $user The user for whom the intent is being processed.
      * @param array $params Can be a string with keywords or an array with more specific parameters.
      */
     public function __construct(

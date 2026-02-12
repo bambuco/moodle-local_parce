@@ -39,7 +39,6 @@ $intentobj = new \local_parce\local\intent\content($context, null, $intentparams
 
 $a = $intentobj->get_content();
 
-//echo '<pre>';
 var_dump($a);
 
 echo $OUTPUT->footer();

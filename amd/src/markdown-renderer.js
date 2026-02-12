@@ -120,14 +120,14 @@ define(['core/log'], function(Log) {
 
             // Check for common markdown patterns
             var markdownPatterns = [
-                /#+\s/,           // Headers: # ## ###
-                /\*\*.*?\*\*|__.*?__/, // Bold
-                /\*.*?\*|_.*?_/,  // Italic
-                /\[.*?\]\(.*?\)/,  // Links
-                /^[-*_]\s/m,       // Lists
-                /`.*?`/,           // Inline code
-                /```/,             // Code blocks
-                /^>/m              // Blockquotes
+                /#+\s/, // Headers: # ## ###.
+                /\*\*.*?\*\*|__.*?__/, // Bold.
+                /\*.*?\*|_.*?_/, // Italic.
+                /\[.*?\]\(.*?\)/, // Links.
+                /^[-*_]\s/m, // Lists.
+                /`.*?`/, // Inline code.
+                /```/, // Code blocks.
+                /^>/m // Blockquotes.
             ];
 
             return markdownPatterns.some(function(pattern) {

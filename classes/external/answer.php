@@ -72,7 +72,7 @@ class answer extends external_api {
         $answer = \local_parce\local\question_handler::process($question, $context);
 
         // Sanitize the answer to prevent XSS attacks
-        // Strip dangerous tags and event handlers while preserving safe HTML
+        // Strip dangerous tags and event handlers while preserving safe HTML.
         $answer = \core_text::entities_to_utf8($answer);
         $answer = strip_tags($answer);
 

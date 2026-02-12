@@ -32,7 +32,6 @@ use core_external\external_value;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class get_conversation extends external_api {
-
     /**
      * Describes the parameters for local_parce_get_conversation
      *

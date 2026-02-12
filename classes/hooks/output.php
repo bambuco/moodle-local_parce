@@ -43,10 +43,10 @@ class output {
             return;
         }
 
-        // Load marked.js library for markdown parsing
+        // Load marked.js library for markdown parsing.
         $PAGE->requires->js(new \moodle_url('/local/parce/lib/marked/marked.min.js'), true);
 
-        // Initialize the chat module
+        // Initialize the chat module.
         $PAGE->requires->js_call_amd('local_parce/chat', 'init', [$COURSE->id]);
     }
 
