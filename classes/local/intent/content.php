@@ -52,7 +52,13 @@ class content extends base {
             return get_string('intent_content_default', 'local_parce');
         }
 
-        $q = implode(' ', $this->params);
+        // The params may come as an associative array like ["content" => ["kw1", "kw2"]].
+        // Flatten to a simple list of keywords before building the search query.
+        $keywords = $this->params['content'] ?? $this->params;
+        if (!is_array($keywords)) {
+            $keywords = [$keywords];
+        }
+        $q = implode(' ', $keywords);
         $content = self::get_search($q);
 
         if (empty($content)) {
@@ -103,7 +109,9 @@ class content extends base {
 
         $data = (object)['q' => $search];
 
-        if (!empty($coursecontext)) {
+        // Only restrict search to a specific course if it's not the site-level front page.
+        // When chatting from the site level, search across all courses the user has access to.
+        if (!empty($coursecontext) && $coursecontext->instanceid != SITEID) {
             $data->courseids = [$coursecontext->instanceid];
         }
 
@@ -163,6 +171,7 @@ class content extends base {
 
         $k = 0;
         $limit = 5;
+        $coursenames = [];
         foreach ($results as $result) {
             $title = $result->get('title');
 
@@ -173,6 +182,14 @@ class content extends base {
             $resource->type = $parts[0];
             $resource->subtype = count($parts) > 1 ? $parts[1] : '';
             $resource->content = $result->get('content');
+
+            $courseid = $result->get('courseid');
+            if (!isset($coursenames[$courseid])) {
+                $course = get_course($courseid);
+                $coursenames[$courseid] = $course->fullname;
+            }
+            $resource->coursename = $coursenames[$courseid];
+            $resource->courseurl = (string)\course_get_url($courseid);
 
             $found[] = $resource;
 

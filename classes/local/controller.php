@@ -118,7 +118,7 @@ class controller
      * @param int $chatid The chat ID
      * @return string The unique conversation identifier (SHA256 hash)
      */
-    private static function generate_conversation_key(int $userid, int $chatid): string {
+    public static function generate_conversation_key(int $userid, int $chatid): string {
         $sessionid = session_id();
         return hash('sha256', "{$userid}_{$chatid}_{$sessionid}");
     }
@@ -161,9 +161,9 @@ class controller
      * @param int $chatid The chat ID
      * @param string $question The user's question
      * @param string $response The system's response
-     * @return void
+     * @return int The ID of the inserted conversation entry record
      */
-    public static function store_conversation_entry(int $userid, int $chatid, string $question, string $response): void {
+    public static function store_conversation_entry(int $userid, int $chatid, string $question, string $response): int {
         global $DB;
 
         $cache = self::get_cache();
@@ -218,7 +218,7 @@ class controller
         $record->response = $response;
         $record->timecreated = $currenttime;
 
-        $DB->insert_record('local_parce_conversation_entries', $record);
+        return $DB->insert_record('local_parce_conversation_entries', $record);
     }
 
     /**
@@ -229,10 +229,10 @@ class controller
      * @param int $chatid The chat ID
      * @param string $question The user's question
      * @param string $response The system's response
-     * @return void
+     * @return int The ID of the inserted conversation entry record
      */
-    public static function store_conversation(int $userid, int $chatid, string $question, string $response): void {
-        self::store_conversation_entry($userid, $chatid, $question, $response);
+    public static function store_conversation(int $userid, int $chatid, string $question, string $response): int {
+        return self::store_conversation_entry($userid, $chatid, $question, $response);
     }
 
     /**
@@ -377,5 +377,87 @@ class controller
 
         // Different year - show full date.
         return userdate($timestamp, get_string('strftimedatemonthabbr', 'langconfig'));
+    }
+
+    /**
+     * Log an AI action transaction to the database.
+     *
+     * @param int $userid The user ID
+     * @param int $contextid The Moodle context ID
+     * @param int $chatid The chat context identifier
+     * @param string $conversationkey The conversation session key
+     * @param string $actiontype The type of AI call (question_plan or answer_question)
+     * @param string $prompt The system instruction prompt
+     * @param string $prompttext The full hackquestion text sent to the AI
+     * @param \core_ai\aiactions\responses\response_base $response The AI response object
+     * @return int The ID of the inserted ai_actions record
+     */
+    public static function log_ai_action(
+        int $userid,
+        int $contextid,
+        int $chatid,
+        string $conversationkey,
+        string $actiontype,
+        string $prompt,
+        string $prompttext,
+        \core_ai\aiactions\responses\response_base $response
+    ): int {
+        global $DB;
+
+        $now = time();
+        $record = new \stdClass();
+        $record->userid = $userid;
+        $record->contextid = $contextid;
+        $record->chatid = $chatid;
+        $record->conversationkey = $conversationkey;
+        $record->actiontype = $actiontype;
+        $record->prompt = $prompt;
+        $record->prompttext = $prompttext;
+        $record->success = $response->get_success() ? 1 : 0;
+        $record->timecreated = $now;
+
+        if ($response->get_success()) {
+            $data = $response->get_response_data();
+            $record->generatedcontent = $data['generatedcontent'] ?? null;
+            $record->responseid = $data['id'] ?? null;
+            $record->fingerprint = $data['fingerprint'] ?? null;
+            $record->finishreason = $data['finishreason'] ?? null;
+            $record->prompttokens = $data['prompttokens'] ?? null;
+            $record->completiontokens = $data['completiontokens'] ?? null;
+            $record->model = $data['model'] ?? null;
+            $record->timecompleted = $now;
+        } else {
+            $record->errorcode = $response->get_errorcode();
+            $record->errormessage = $response->get_errormessage();
+        }
+
+        return $DB->insert_record('local_parce_ai_actions', $record);
+    }
+
+    /**
+     * Update an AI action record with intent information and optionally the conversation entry ID.
+     *
+     * @param int $actionid The ID of the ai_actions record to update
+     * @param string $intent The detected intent type
+     * @param array|null $intentparams The intent parameters (will be JSON-encoded)
+     * @param int|null $conversationentryid The conversation entry ID to link
+     * @return void
+     */
+    public static function update_ai_action(int $actionid, string $intent, ?array $intentparams = null, ?int $conversationentryid = null): void {
+        global $DB;
+
+        $update = new \stdClass();
+        $update->id = $actionid;
+        $update->intent = $intent;
+
+        if ($intentparams !== null) {
+            $update->intentparams = json_encode($intentparams);
+        }
+
+        if ($conversationentryid !== null) {
+            $update->conversationentryid = $conversationentryid;
+        }
+
+        $DB->update_record('local_parce_ai_actions', $update);
     }
 }

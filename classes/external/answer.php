@@ -53,7 +53,7 @@ class answer extends external_api {
      * @return array Array containing the answer
      */
     public static function execute(string $question, int $contextid = 1): array {
-        global $USER;
+        global $USER, $DB;
 
         // Parameter validation.
         ['question' => $question, 'contextid' => $contextid] = self::validate_parameters(
@@ -78,6 +78,7 @@ class answer extends external_api {
         $answer = format_text($answer, FORMAT_HTML, [
             'noclean' => false,
             'para' => false,
+            'filter' => false,
         ]);
 
         if (trim($answer) == 'NOT_FOUND') {
@@ -91,13 +92,22 @@ class answer extends external_api {
             $chatid = SITEID;
         }
 
-        // Save message in cache.
-        controller::store_conversation(
-            userid: $USER->id,
-            chatid: $chatid,
-            question: $question,
-            response: $answer
-        );
+        // Only store in conversation history when a successful response was generated.
+        // Error/fallback messages pollute the context and bias the AI toward failure responses.
+        if (\local_parce\local\question_handler::was_last_successful()) {
+            $entryid = controller::store_conversation(
+                userid: $USER->id,
+                chatid: $chatid,
+                question: $question,
+                response: $answer
+            );
+
+            // Link the AI action records to this conversation entry.
+            $actionids = \local_parce\local\question_handler::get_last_action_ids();
+            foreach ($actionids as $actionid) {
+                $DB->set_field('local_parce_ai_actions', 'conversationentryid', $entryid, ['id' => $actionid]);
+            }
+        }
 
         return [
             'answer' => $answer,
@@ -111,7 +121,7 @@ class answer extends external_api {
      */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
-            'answer' => new external_value(PARAM_TEXT, 'The answer to the user question'),
+            'answer' => new external_value(PARAM_RAW, 'The answer to the user question'),
         ]);
     }
 }

@@ -36,6 +36,35 @@ use local_parce\aiactions\question_plan;
  * using local_parce custom AI actions (answer_question, question_plan).
  */
 class question_handler {
+
+    /**
+     * @var int[] IDs of the AI action log records created during processing.
+     */
+    private static array $lastactionids = [];
+
+    /**
+     * @var bool Whether the last process() call produced a successful content response.
+     */
+    private static bool $lastsuccessful = false;
+
+    /**
+     * Get the AI action IDs from the last process() call.
+     *
+     * @return int[] Array of local_parce_ai_actions record IDs
+     */
+    public static function get_last_action_ids(): array {
+        return self::$lastactionids;
+    }
+
+    /**
+     * Check if the last process() call produced a successful content response.
+     *
+     * @return bool True if the last response was successful content, false if it was an error/fallback message.
+     */
+    public static function was_last_successful(): bool {
+        return self::$lastsuccessful;
+    }
+
     /**
      * Process a question and return a response.
      *
@@ -45,6 +74,9 @@ class question_handler {
      */
     public static function process($question, $context = null): string {
         global $USER;
+
+        self::$lastactionids = [];
+        self::$lastsuccessful = false;
 
         // Validate input.
         if (empty($question)) {
@@ -64,6 +96,7 @@ class question_handler {
             $helptext = get_string('static_help', 'local_parce');
             if (strtolower($question) === strtolower($helptext)) {
                 $intentobj = new intent\help($context, null);
+                self::$lastsuccessful = true;
                 return self::pre_response($question, $intentobj->get_content());
             }
 
@@ -88,6 +121,8 @@ class question_handler {
                 return get_string('error_ai_unavailable', 'local_parce');
             }
 
+            $conversationkey = controller::generate_conversation_key($USER->id, $chatid);
+
             // Time 1: Get the real intention of the question.
             $previous = self::get_conversation_context($USER->id, $chatid);
             $hackquestion = self::make_hackquestion($question, $previous);
@@ -108,6 +143,19 @@ class question_handler {
             $actionprovider->prompt = $prompt;
             $response = $actionprovider->process();
 
+            // Log question_plan action.
+            $planactionid = controller::log_ai_action(
+                $USER->id,
+                $context->id,
+                $chatid,
+                $conversationkey,
+                'question_plan',
+                $prompt,
+                $hackquestion,
+                $response
+            );
+            self::$lastactionids[] = $planactionid;
+
             $generatedcontent = '';
             // Check if successful.
             if ($response->get_success()) {
@@ -124,23 +172,30 @@ class question_handler {
             // Time 2: Get the response based on the intention.
             $type = @json_decode($generatedcontent, true);
 
-            $intentavailable = ['base', 'content', 'greeting', 'help'];
+            $intentavailable = ['base', 'content', 'dates', 'greeting', 'help'];
             if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
                 return get_string('error_processing_question', 'local_parce');
             }
-            $intentclass = '\local_parce\local\intent\\' . $type['type'];
+
+            $intentname = $type['type'];
+            $intentparams = $type['params'] ?? [];
+            if (!is_array($intentparams)) {
+                $intentparams = [$intentparams];
+            }
+
+            // Update the plan action with the detected intent.
+            controller::update_ai_action($planactionid, $intentname, $intentparams);
+
+            $intentclass = '\local_parce\local\intent\\' . $intentname;
 
             if (!class_exists($intentclass)) {
                 return get_string('error_processing_question', 'local_parce');
             }
 
-            $intentparams = $type['params'] ?? [];
-            if (!is_array($intentparams)) {
-                $intentparams = [$intentparams];
-            }
             $intentobj = new $intentclass($context, null, $intentparams);
 
             if (!$intentobj->require_ia()) {
+                self::$lastsuccessful = true;
                 return self::pre_response($question, $intentobj->get_content());
             }
 
@@ -172,13 +227,31 @@ class question_handler {
                 prompttext: $hackquestion
             );
 
-            $actionprovider = new \aiprovider_bbco\process_generate_text($provider, $action);
-            $actionprovider->prompt = get_config('local_parce', 'answer_question_prompt');
-            if (empty($actionprovider->prompt)) {
-                $actionprovider->prompt = get_string('default_answer_question_prompt', 'local_parce');
+            $answerprompt = get_config('local_parce', 'answer_question_prompt');
+            if (empty($answerprompt)) {
+                $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
             }
 
+            $actionprovider = new \aiprovider_bbco\process_generate_text($provider, $action);
+            $actionprovider->prompt = $answerprompt;
+
             $response = $actionprovider->process();
+
+            // Log answer_question action.
+            $answeractionid = controller::log_ai_action(
+                $USER->id,
+                $context->id,
+                $chatid,
+                $conversationkey,
+                'answer_question',
+                $answerprompt,
+                $hackquestion,
+                $response
+            );
+            self::$lastactionids[] = $answeractionid;
+
+            // Set the intent on the answer action too.
+            controller::update_ai_action($answeractionid, $intentname, $intentparams);
 
             $generatedcontent = '';
             // Check if successful.
@@ -193,10 +266,14 @@ class question_handler {
                 return get_string('error_ai_failed', 'local_parce') . ': ' . $response->get_errormessage();
             }
 
+            // Append course references if the content came from courses other than the current one.
+            $generatedcontent .= self::build_course_references($content, $context);
+
+            self::$lastsuccessful = true;
             return self::pre_response($question, $generatedcontent);
         } catch (\core\exception\coding_exception $e) {
             return get_string('error_ai_unavailable', 'local_parce');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return get_string('error_processing_question', 'local_parce');
         }
     }
@@ -275,5 +352,62 @@ class question_handler {
         }
 
         return $hackquestion;
+    }
+
+    /**
+     * Build markdown course references from the search results JSON.
+     *
+     * Extracts unique course names/URLs from the content JSON and returns
+     * a markdown-formatted line for each course, excluding the current context course.
+     *
+     * @param string $contentjson The JSON string with search results containing coursename and courseurl fields.
+     * @param \core\context $context The current context to determine if the course reference is needed.
+     * @return string Markdown-formatted course references or empty string.
+     */
+    private static function build_course_references(string $contentjson, \core\context $context): string {
+        $items = @json_decode($contentjson, true);
+        if (empty($items) || !is_array($items)) {
+            return '';
+        }
+
+        $currentcourseid = 0;
+        $coursecontext = $context->get_course_context(false);
+        if (!empty($coursecontext)) {
+            $currentcourseid = $coursecontext->instanceid;
+        }
+
+        // Collect unique courses that differ from the current one.
+        $courses = [];
+        foreach ($items as $item) {
+            if (empty($item['coursename']) || empty($item['courseurl'])) {
+                continue;
+            }
+            $url = $item['courseurl'];
+            if (isset($courses[$url])) {
+                continue;
+            }
+            // Skip the site-level course and the current course context.
+            if (preg_match('/[?&]id=(\d+)/', $url, $matches)) {
+                $courseid = (int)$matches[1];
+                if ($courseid === SITEID || $courseid === $currentcourseid) {
+                    continue;
+                }
+            }
+            $courses[$url] = $item['coursename'];
+        }
+
+        if (empty($courses)) {
+            return '';
+        }
+
+        $lines = "\n\n---\n";
+        foreach ($courses as $url => $name) {
+            $lines .= '📚 ' . get_string('course_reference', 'local_parce', [
+                'coursename' => $name,
+                'courseurl' => $url,
+            ]) . "\n";
+        }
+
+        return $lines;
     }
 }
