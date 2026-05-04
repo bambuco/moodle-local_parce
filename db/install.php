@@ -25,9 +25,9 @@
 /**
  * Execute local_parce installation.
  *
+ * Creates the database tables required for the plugin during fresh installation.
+ *
  * @return void
  */
 function xmldb_local_parce_install() {
-    // Plugin installation logic can be added here if needed in the future.
-    // Currently, the plugin only provides UI components and does not require database tables.
 }

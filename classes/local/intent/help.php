@@ -14,20 +14,32 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+namespace local_parce\local\intent;
+
 /**
- * Upgrade script for local_parce
+ * Class help
  *
  * @package    local_parce
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+class help extends base {
+    /**
+     * Get the content based on the parameters.
+     *
+     * @return string The content to be displayed, based on the keywords or topics provided in the parameters.
+     */
+    public function get_content(): string {
+        $help = '';
+        switch ($this->context->contextlevel) {
+            case CONTEXT_COURSE:
+                $help = get_string('intent_help_course', 'local_parce');
+            case CONTEXT_MODULE:
+                $help = get_string('intent_help_module', 'local_parce');
+            default:
+                $help = get_string('intent_help_default', 'local_parce');
+        }
 
-/**
- * Execute local_parce upgrade.
- *
- * @param int $oldversion The installed version of the plugin
- * @return bool True if successful, false otherwise
- */
-function xmldb_local_parce_upgrade($oldversion) {
-    return true;
+        return $help;
+    }
 }

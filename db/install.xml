@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/parce/db" VERSION="20260214" COMMENT="XMLDB file for Moodle local/parce/db"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="local_parce_conversation_entries" COMMENT="Stores conversation entries for audit and history tracking">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true" COMMENT="Primary key"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="User who participated in the conversation"/>
+        <FIELD NAME="chatid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Chat context identifier (cm, course or site)"/>
+        <FIELD NAME="conversationkey" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Unique conversation identifier (userid_chatid_sessionid)"/>
+        <FIELD NAME="question" TYPE="text" NOTNULL="true" COMMENT="User question"/>
+        <FIELD NAME="response" TYPE="text" NOTNULL="true" COMMENT="System response"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Timestamp when the entry was created"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="Primary key"/>
+        <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+        <KEY NAME="chatid" TYPE="foreign" FIELDS="chatid" REFTABLE="context" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="userid_chatid_idx" UNIQUE="false" FIELDS="userid,chatid" COMMENT="Index for user and chat lookups"/>
+        <INDEX NAME="conversationkey_idx" UNIQUE="false" FIELDS="conversationkey" COMMENT="Index for conversation key lookups"/>
+        <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated" COMMENT="Index for time-based queries"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

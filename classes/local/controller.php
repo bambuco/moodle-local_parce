@@ -108,6 +108,22 @@ class controller
     }
 
     /**
+     * Generate a unique conversation identifier.
+     *
+     * Creates a unique identifier based on userid, chatid, and session.
+     * This ensures that each conversation is uniquely identified within a session.
+     * When the session is renewed, a new identifier is generated.
+     *
+     * @param int $userid The user ID
+     * @param int $chatid The chat ID
+     * @return string The unique conversation identifier (SHA256 hash)
+     */
+    private static function generate_conversation_key(int $userid, int $chatid): string {
+        $sessionid = session_id();
+        return hash('sha256', "{$userid}_{$chatid}_{$sessionid}");
+    }
+
+    /**
      * Register a chatid for a specific user in the index.
      *
      * Maintains an index of all chatids used by a user to enable
@@ -136,7 +152,10 @@ class controller
     }
 
     /**
-     * Store a conversation entry (question and response) in cache.
+     * Store a conversation entry in both cache and database.
+     *
+     * Persists a conversation entry (question and response) in the session cache
+     * for quick retrieval and in the database for permanent storage and audit trail.
      *
      * @param int $userid The user ID
      * @param int $chatid The chat ID
@@ -144,10 +163,14 @@ class controller
      * @param string $response The system's response
      * @return void
      */
-    public static function store_conversation(int $userid, int $chatid, string $question, string $response): void {
+    public static function store_conversation_entry(int $userid, int $chatid, string $question, string $response): void {
+        global $DB;
+
         $cache = self::get_cache();
         $config = self::get_cache_config();
         $key = self::get_cache_key($userid, $chatid);
+        $conversationkey = self::generate_conversation_key($userid, $chatid);
+        $currenttime = time();
 
         // Register this chatid in the user's index for later cleanup
         self::register_user_chatid($userid, $chatid);
@@ -156,7 +179,8 @@ class controller
         if ($data === false) {
             $data = [
                 'entries' => [],
-                'created' => time(),
+                'created' => $currenttime,
+                'conversationkey' => $conversationkey,
             ];
         }
 
@@ -164,14 +188,14 @@ class controller
         $data['entries'][] = [
             'role' => 'user',
             'content' => $question,
-            'timestamp' => time(),
+            'timestamp' => $currenttime,
         ];
 
         // Add system response.
         $data['entries'][] = [
             'role' => 'system',
             'content' => $response,
-            'timestamp' => time(),
+            'timestamp' => $currenttime,
         ];
 
         // Enforce maximum entries limit by removing oldest entries.
@@ -180,9 +204,35 @@ class controller
             $data['entries'] = array_slice($data['entries'], -$config['maxentries']);
         }
 
-        $data['lastaccess'] = time();
+        $data['lastaccess'] = $currenttime;
 
+        // Store in cache
         $cache->set($key, $data);
+
+        // Store in database
+        $record = new \stdClass();
+        $record->userid = $userid;
+        $record->chatid = $chatid;
+        $record->conversationkey = $conversationkey;
+        $record->question = $question;
+        $record->response = $response;
+        $record->timecreated = $currenttime;
+
+        $DB->insert_record('local_parce_conversation_entries', $record);
+    }
+
+    /**
+     * Store a conversation entry (question and response) in cache.
+     *
+     * @deprecated Use store_conversation_entry instead. This method is kept for backward compatibility.
+     * @param int $userid The user ID
+     * @param int $chatid The chat ID
+     * @param string $question The user's question
+     * @param string $response The system's response
+     * @return void
+     */
+    public static function store_conversation(int $userid, int $chatid, string $question, string $response): void {
+        self::store_conversation_entry($userid, $chatid, $question, $response);
     }
 
     /**

@@ -105,3 +105,7 @@ $string['setting_openanswer_prompt_desc'] = 'The system instruction that guides 
 $string['setting_question_plan_prompt'] = 'Question Plan System Instruction';
 $string['setting_question_plan_prompt_desc'] = 'The system instruction that guides the AI when creating a structured plan or outline for a question or topic. This instruction is sent to the AI model with every question_plan request.';
 $string['yesterday'] = 'Yesterday {$a}';
+$string['intent_help_course'] = 'You are in a course context. You can ask me questions related to the course content, assignments, or any other course-related topics. Just type your question and I\'ll do my best to help!';
+$string['intent_help_module'] = 'You are currently in a module context. You can ask me questions related to the specific module content, dates, or any other module-related topics. Just type your question and I\'ll do my best to assist you!';
+$string['intent_help_default'] = 'Welcome to the help section! You can ask me questions about the content you are viewing, and I will do my best to provide relevant information. Just type your question and I\'ll be here to assist you!';
+$string['static_help'] = 'help';

@@ -67,7 +67,16 @@ Formato de salida:
 - No agregues texto antes ni después de la respuesta.';
 $string['default_intent_response'] = 'Aún no estoy seguro de cómo ayudar con eso, ¡pero estoy aprendiendo cosas nuevas todos los días! Por favor intenta preguntar de una manera diferente o vuelve más tarde para más capacidades.';
 $string['default_openanswer_prompt'] = 'Si no estás completamente seguro de la respuesta, di que no lo sabes. No proporciones respuestas ofensivas, racistas, violentas o ilegales. Además, no respondas preguntas sobre salud, salud mental o crimen.';
-$string['default_question_plan_prompt'] = 'Basado en el JSON del usuario, responde con un JSON válido que contenga:\n"type": debe ser uno de: greeting, content, dates\n"params": Para el tipo "content" las palabras clave que definen el contenido a buscar, para fechas los rangos de fechas, para "greeting" un saludo aleatorio+respetuoso+cordial+creativo a partir del saludo del usuario\nResponde solo el JSON puro, sin bloques de código, sin markdown y sin texto adicional.';
+$string['default_question_plan_prompt'] = 'Basado en el JSON del usuario, responde con un JSON válido que contenga: type y params.\n
+"type": debe ser uno de: greeting, content, dates, help\n
+- el tipo "help" se usará para preguntas relacionadas con cómo usar el sistema, o qué tipo de preguntas se pueden hacer.\n
+
+"params":
+- "content" las palabras clave que definen el contenido a buscar
+- "dates" los rangos de fechas
+- "greeting" un saludo aleatorio+respetuoso+cordial+creativo a partir del saludo del usuario\n
+
+Responde solo el JSON puro, sin bloques de código, sin markdown y sin texto adicional.';
 $string['defaulttitle'] = 'Parce - Chat de Preguntas y Respuestas';
 $string['error_ai_failed'] = 'No se pudo generar una respuesta';
 $string['error_ai_unavailable'] = 'El servicio de IA no está disponible en este momento.';
@@ -106,3 +115,7 @@ $string['setting_openanswer_prompt_desc'] = 'La instrucción del sistema que gu�
 $string['setting_question_plan_prompt'] = 'Instrucción para entender las Preguntas';
 $string['setting_question_plan_prompt_desc'] = 'La instrucción del sistema que guía a la IA al crear un plan o esquema estructurado para una pregunta o tema. Esta instrucción se envía al modelo de IA con cada solicitud de plan de preguntas.';
 $string['yesterday'] = 'Ayer {$a}';
+$string['intent_help_course'] = '¡Estás en un contexto de curso! Puedes hacerme preguntas relacionadas con el contenido del curso, las tareas o cualquier otro tema relacionado con el curso. Solo escribe tu pregunta y haré lo mejor posible para ayudarte.';
+$string['intent_help_module'] = '¡Actualmente estás en un contexto de módulo! Puedes hacerme preguntas relacionadas con el contenido específico del recurso, las fechas o cualquier otro tema relacionado con el módulo. Solo escribe tu pregunta y haré lo mejor posible para asistirte.';
+$string['intent_help_default'] = '¡Bienvenido a la sección de ayuda! Puedes hacerme preguntas sobre el contenido que estás viendo, y haré lo mejor posible para proporcionar información relevante. Solo escribe tu pregunta y estaré aquí para ayudarte.';
+$string['static_help'] = 'ayuda';

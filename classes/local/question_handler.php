@@ -60,6 +60,13 @@ class question_handler {
         }
 
         try {
+            // Manage static requirements.
+            $helptext = get_string('static_help', 'local_parce');
+            if (strtolower($question) === strtolower($helptext)) {
+                $intentobj = new intent\help($context, null);
+                return self::pre_response($question, $intentobj->get_content());
+            }
+
             // Get the AI manager from DI container.
             $manager = \core\di::get(\core_ai\manager::class);
             $providerrecord = $manager->get_provider_records(['provider' => 'aiprovider_bbco\provider', 'enabled' => 1]);
@@ -117,7 +124,7 @@ class question_handler {
             // Time 2: Get the response based on the intention.
             $type = @json_decode($generatedcontent, true);
 
-            $intentavailable = ['content', 'greeting', 'base'];
+            $intentavailable = ['base', 'content', 'greeting', 'help'];
             if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
                 return get_string('error_processing_question', 'local_parce');
             }
