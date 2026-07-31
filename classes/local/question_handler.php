@@ -36,7 +36,6 @@ use local_parce\aiactions\question_plan;
  * using local_parce custom AI actions (answer_question, question_plan).
  */
 class question_handler {
-
     /**
      * @var int[] IDs of the AI action log records created during processing.
      */

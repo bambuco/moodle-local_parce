@@ -172,7 +172,7 @@ class controller
         $conversationkey = self::generate_conversation_key($userid, $chatid);
         $currenttime = time();
 
-        // Register this chatid in the user's index for later cleanup
+        // Register this chatid in the user's index for later cleanup.
         self::register_user_chatid($userid, $chatid);
 
         $data = $cache->get($key);
@@ -206,10 +206,10 @@ class controller
 
         $data['lastaccess'] = $currenttime;
 
-        // Store in cache
+        // Store in cache.
         $cache->set($key, $data);
 
-        // Store in database
+        // Store in database.
         $record = new \stdClass();
         $record->userid = $userid;
         $record->chatid = $chatid;
@@ -443,7 +443,12 @@ class controller
      * @param int|null $conversationentryid The conversation entry ID to link
      * @return void
      */
-    public static function update_ai_action(int $actionid, string $intent, ?array $intentparams = null, ?int $conversationentryid = null): void {
+    public static function update_ai_action(
+        int $actionid,
+        string $intent,
+        ?array $intentparams = null,
+        ?int $conversationentryid = null
+    ): void {
         global $DB;
 
         $update = new \stdClass();

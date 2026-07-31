@@ -34,8 +34,10 @@ class help extends base {
         switch ($this->context->contextlevel) {
             case CONTEXT_COURSE:
                 $help = get_string('intent_help_course', 'local_parce');
+                break;
             case CONTEXT_MODULE:
                 $help = get_string('intent_help_module', 'local_parce');
+                break;
             default:
                 $help = get_string('intent_help_default', 'local_parce');
         }

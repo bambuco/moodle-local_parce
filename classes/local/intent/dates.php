@@ -32,7 +32,6 @@ use core_calendar\local\event\container as calendar_container;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class dates extends content {
-
     /**
      * Get the content based on the date parameters.
      *
