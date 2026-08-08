@@ -250,11 +250,12 @@ final class get_conversation_test extends \core_external\tests\externallib_testc
         $this->assertLessThanOrEqual(100, \local_parce\local\controller::estimate_payload_tokens($json));
 
         $payload = \local_parce\local\controller::build_ai_payload(
-            'Instruction',
             'Question',
             [['role' => 'user', 'content' => str_repeat('old ', 30000)]],
             \local_parce\local\controller::encode_retrieved_items($items)
         );
+        $this->assertStringNotContainsString('Instruction', $payload);
+        $this->assertStringNotContainsString('<INSTRUCTION_START>', $payload);
         $this->assertLessThanOrEqual(
             \local_parce\local\controller::MAX_PAYLOAD_TOKENS,
             \local_parce\local\controller::estimate_payload_tokens($payload)

@@ -25,11 +25,11 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component    = 'local_parce';
-$plugin->release      = '1.1';
-$plugin->version      = 2026080713;
+$plugin->release      = '1.2';
+$plugin->version      = 2026080800;
 $plugin->requires     = 2025100600;
 $plugin->supported    = [501, 501];
 $plugin->maturity     = MATURITY_BETA;
 $plugin->dependencies = [
-    'aiprovider_bbco' => 2026080600,
+    'aiprovider_bbco' => 2026080800,
 ];

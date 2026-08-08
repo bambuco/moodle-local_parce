@@ -86,7 +86,7 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 - "help": questions about using the system or what can be asked.
 
 "params":
-- For "resource", use "content" with only distinctive search terms; exclude words that merely name the type, such as course, activity, or resource. Optionally include "resourcetype": ["core_course"] for courses or ["mod"] for activities.
+- For "resource", "resourcetype" is required. Module types used in the course appear as a JSON object between RESOURCE_TYPES_START and RESOURCE_TYPES_END: each key is an allowed short name and its boolean indicates whether the component declares that it can produce grades. Use ["core_course"] for courses, ["*"] for all available module types, or an array of specific object keys for the requested types. Use "content" with only terms from the current question that distinguish the resource name within the context; use an empty array when there are none. Use history only to resolve explicit references in the current question.
 - For "content", use "content" with the subject and terms that distinguish the requested answer, while omitting generic syntactic wording. Preserve concepts such as advantages, causes, or definition. For example, "good things about social networks" should search for "advantages social networks".
 - For "dates", use "dates" with date ranges or terms.
 - For "grades", use "grades" with only a distinctive course or grade-item name when supplied. Use an empty array for a general question about all grades.

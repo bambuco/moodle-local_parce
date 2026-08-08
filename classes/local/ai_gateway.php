@@ -51,10 +51,12 @@ class ai_gateway {
      *
      * @param \core_ai\provider $provider Broker provider
      * @param object $action AI action
+     * @param string $systeminstruction Request-specific system instruction
      * @return array Response, provider identity and start timestamp
      */
-    public function generate(\core_ai\provider $provider, object $action): array {
+    public function generate(\core_ai\provider $provider, object $action, string $systeminstruction): array {
         $processor = new \aiprovider_bbco\process_generate_text($provider, $action);
+        $processor->set_system_instruction($systeminstruction);
         $started = time();
         $monotonicstart = hrtime(true);
         $response = $processor->process();

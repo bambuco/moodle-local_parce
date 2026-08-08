@@ -136,7 +136,9 @@ class question_handler {
             if (empty($prompt)) {
                 $prompt = get_string('default_question_plan_prompt', 'local_parce');
             }
-            $hackquestion = controller::build_ai_payload($prompt, $question, $previous);
+            $resourcetypes = intent\resource::get_module_type_catalogue($context);
+            $resourcetypes = empty($resourcetypes) ? '' : json_encode($resourcetypes, JSON_UNESCAPED_SLASHES);
+            $hackquestion = controller::build_ai_payload($question, $previous, '', $resourcetypes);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
@@ -273,7 +275,7 @@ class question_handler {
             if (empty($answerprompt)) {
                 $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
             }
-            $hackquestion = controller::build_ai_payload($answerprompt, $question, $previous, $content);
+            $hackquestion = controller::build_ai_payload($question, $previous, $content);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
@@ -391,7 +393,7 @@ class question_handler {
                 return null;
             }
             $generation['providerattempted'] = true;
-            $generation = $gateway->generate($provider, $action);
+            $generation = $gateway->generate($provider, $action, $prompt);
             $generation['providerattempted'] = true;
             $generation['durationms'] ??= max(1, (int) ceil((hrtime(true) - $callstarted) / 1_000_000));
             $response = $generation['response'];

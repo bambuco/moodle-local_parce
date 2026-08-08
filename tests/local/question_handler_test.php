@@ -407,6 +407,72 @@ final class question_handler_test extends \advanced_testcase {
     }
 
     /**
+     * Resource planning receives dynamic module capabilities and accepts selected short names.
+     */
+    public function test_resource_intent_uses_dynamic_module_type_catalogue(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'GESTION AMBIENTAL *10155B']);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setAdminUser();
+        $assignment = $this->getDataGenerator()->create_module('assign', [
+            'course' => $course->id,
+            'name' => 'Proyecto final',
+        ]);
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id,
+            'name' => 'Examen final',
+        ]);
+        $this->getDataGenerator()->create_module('forum', [
+            'course' => $course->id,
+            'name' => 'Foro general',
+        ]);
+        $this->getDataGenerator()->create_module('resource', [
+            'course' => $course->id,
+            'name' => 'Documento general',
+        ]);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'resource',
+                'params' => ['content' => [], 'resourcetype' => ['assign', 'quiz']],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Hay evaluaciones en el curso?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertStringContainsString('Proyecto final', $answer);
+        $this->assertStringContainsString('/mod/assign/view.php?id=' . $assignment->cmid, $answer);
+        $this->assertStringContainsString('Examen final', $answer);
+        $this->assertStringContainsString('/mod/quiz/view.php?id=' . $quiz->cmid, $answer);
+        $this->assertStringNotContainsString('Foro general', $answer);
+        $this->assertStringNotContainsString('Documento general', $answer);
+        $this->assertStringContainsString(
+            '<RESOURCE_TYPES_START>{"assign":true,"forum":true,"quiz":true,"resource":false}'
+                . '<RESOURCE_TYPES_END>',
+            $gateway->get_prompt_texts()[0]
+        );
+        $this->assertSame(1, $gateway->get_generate_calls());
+
+        $allresources = new \local_parce\local\intent\resource(
+            \context_course::instance($course->id),
+            $student,
+            ['content' => [], 'resourcetype' => ['*']]
+        );
+        $allanswer = $allresources->get_content();
+        $this->assertStringContainsString('Foro general', $allanswer);
+        $this->assertStringContainsString('Documento general', $allanswer);
+    }
+
+    /**
      * Grade questions use the user's visible grade report as answer context.
      */
     public function test_grades_intent_answers_from_visible_grade(): void {
@@ -592,6 +658,16 @@ final class question_handler_test extends \advanced_testcase {
         $this->assertStringNotContainsString('NOT_FOUND', $result);
         $this->assertFalse(\local_parce\local\question_handler::was_last_successful());
         $this->assertSame(2, $gateway->get_generate_calls());
+        $questionplanprompt = get_config('local_parce', 'question_plan_prompt')
+            ?: get_string('default_question_plan_prompt', 'local_parce');
+        $answerprompt = get_config('local_parce', 'answer_question_prompt')
+            ?: get_string('default_answer_question_prompt', 'local_parce');
+        $this->assertSame([$questionplanprompt, $answerprompt], $gateway->get_system_instructions());
+        foreach ($gateway->get_prompt_texts() as $prompttext) {
+            $this->assertStringNotContainsString('<INSTRUCTION_START>', $prompttext);
+            $this->assertStringNotContainsString($questionplanprompt, $prompttext);
+            $this->assertStringNotContainsString($answerprompt, $prompttext);
+        }
     }
 
     /**

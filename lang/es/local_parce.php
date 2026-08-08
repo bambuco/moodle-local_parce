@@ -87,7 +87,7 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 - "help": preguntas sobre cómo usar el sistema o qué se puede preguntar.
 
 "params":
-- Para "resource", usa "content" con solo los términos distintivos de búsqueda; excluye palabras que únicamente nombran el tipo, como curso, actividad o recurso. Incluye opcionalmente "resourcetype": ["core_course"] para cursos o ["mod"] para actividades.
+- Para "resource", "resourcetype" es obligatorio. Los tipos de módulos usados en el curso aparecen como un objeto JSON entre RESOURCE_TYPES_START y RESOURCE_TYPES_END: cada clave es el nombre corto permitido y su booleano indica si el componente declara que puede generar calificaciones. Usa ["core_course"] para cursos, ["*"] para todos los tipos de módulos disponibles o un arreglo de claves concretas del objeto para los tipos solicitados. Usa "content" con solo los términos de la pregunta actual que distinguen el nombre del recurso dentro del contexto; usa un arreglo vacío si no existen. Usa el historial únicamente para resolver referencias explícitas de la pregunta actual.
 - Para "content", usa "content" con el tema y los términos que distinguen la respuesta solicitada, pero omite expresiones sintácticas genéricas. Conserva conceptos como ventajas, causas o definición. Por ejemplo, "cosas buenas de las redes sociales" debe buscar "ventajas redes sociales".
 - Para "dates", usa "dates" con los rangos o términos de fecha.
 - Para "grades", usa "grades" solo con el nombre distintivo del curso o elemento de calificación, cuando esté presente. Usa un arreglo vacío para una consulta general sobre todas las calificaciones.

@@ -6,7 +6,7 @@
 
 - Moodle 5.1 (`2025100600`) only.
 - PHP 8.2 or newer, following the Moodle 5.1 platform requirement.
-- `aiprovider_bbco` version `2026080600` or newer.
+- `aiprovider_bbco` version `2026080800` or newer.
 
 ## Data architecture
 
@@ -21,7 +21,7 @@ Parce deliberately keeps active and durable data separate:
 
 The active thread rotates before a question would reach either its configured limit or the hard limits of 40 complete turns and 16,000 estimated tokens. Prompts include at most eight complete recent turns and 8,000 estimated tokens. Retrieved Search, Calendar, Grades or Progress data has an independent 8,000-token budget; the complete provider payload is limited to 18,000 estimated tokens.
 
-Retrieved content, events, grade and completion data are untrusted data. Parce places instructions, questions, prior turns and retrieved data in explicit text delimiters, but this does not imply that BBCO or the effective provider preserves a native `system` role.
+Retrieved content, events, grade and completion data are untrusted data. Parce sends its request-specific instruction separately so BBCO can replace the effective provider's generic `generate_text` system instruction. Questions, prior turns and retrieved data remain isolated with explicit text delimiters in the user prompt.
 
 ## History, guests and privacy
 
@@ -62,7 +62,7 @@ Except for the widget's exact static help command, Parce first asks the configur
 
 - `greeting`: returns the cordial greeting supplied by the planner, or the plugin's default greeting when none is supplied. It does not search Moodle or make a second AI call.
 - `help`: explains what can be asked. Its response is selected for the current system, course or activity-module context. The static help command reaches this intent without an AI planning call; an AI-classified help request stops after planning.
-- `resource`: handles explicit requests to find, show or access courses, activities and other Moodle resources. It searches by distinctive terms and can restrict results by Search API component or area; `core_course` targets courses and `mod` targets the supported activity components (assignment, database, feedback, forum, lesson, quiz, SCORM and workshop). It returns up to five Moodle Search links directly, without asking AI to interpret their content.
+- `resource`: handles explicit requests to find, show or access courses, activities and other Moodle resources. In course contexts the planner receives a compact catalogue of module short names used in that course, with a boolean indicating each component's `FEATURE_GRADE_HAS_GRADE` support. Its required `resourcetype` parameter accepts `core_course`, `*` for every catalogued module type, or selected short names such as `assign` and `lti`. Searches with distinctive terms use Moodle Search; requests without them list matching visible activities directly. It returns up to five links without asking AI to interpret their content.
 - `content`: answers explanatory questions from Moodle Search content. It searches with the planner's subject terms, rejects insufficiently relevant matches, ranks the remaining results and sends at most five to a second AI call. Link-only results are returned directly instead. When nothing is found, the configured open-answer policy either permits an answer without retrieved Moodle content or returns a not-found response.
 - `dates`: answers questions about upcoming calendar events and deadlines. It reads visible events from now through the next 90 days, filters their names and descriptions with the planner's terms and sends at most ten matches to a second AI call. It is not a general calendar browser and does not retrieve past events or events beyond that window.
 - `grades`: answers questions about the current user's own visible grades and grading feedback. In a course it reads that course's user grade report; at site level it checks the user's active enrolled courses. It respects Moodle grade-report capabilities, course `showgrades`, hidden items and activity availability, returns at most 50 matching items and makes a second AI call. It never uses an open answer when no grade data is available. Example: **“¿Qué calificación obtuve en el Quiz de seguridad?”**

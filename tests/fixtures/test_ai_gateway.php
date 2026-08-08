@@ -37,6 +37,12 @@ class test_ai_gateway extends \local_parce\local\ai_gateway {
     /** @var int Number of generation calls. */
     private int $generatecalls = 0;
 
+    /** @var string[] System instructions received in call order. */
+    private array $systeminstructions = [];
+
+    /** @var string[] User prompts received in call order. */
+    private array $prompttexts = [];
+
     /** @var int Optional controlled delay in microseconds. */
     public int $delay = 0;
 
@@ -70,14 +76,35 @@ class test_ai_gateway extends \local_parce\local\ai_gateway {
     }
 
     /**
+     * Return system instructions received by generation calls.
+     *
+     * @return string[]
+     */
+    public function get_system_instructions(): array {
+        return $this->systeminstructions;
+    }
+
+    /**
+     * Return user prompts received by generation calls.
+     *
+     * @return string[]
+     */
+    public function get_prompt_texts(): array {
+        return $this->prompttexts;
+    }
+
+    /**
      * Return the next queued response.
      *
      * @param \core_ai\provider $provider Simulated provider
      * @param object $action AI action
+     * @param string $systeminstruction Request-specific system instruction
      * @return array
      */
-    public function generate(\core_ai\provider $provider, object $action): array {
+    public function generate(\core_ai\provider $provider, object $action, string $systeminstruction): array {
         $this->generatecalls++;
+        $this->systeminstructions[] = $systeminstruction;
+        $this->prompttexts[] = $action->get_configuration('prompttext');
         $started = hrtime(true);
         if ($this->delay > 0) {
             usleep($this->delay);

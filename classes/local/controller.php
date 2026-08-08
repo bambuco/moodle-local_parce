@@ -714,21 +714,28 @@ class controller
     }
 
     /**
-     * Build a delimited provider payload which never exceeds the total budget.
+     * Build a delimited user payload which never exceeds the total budget.
      *
-     * The markers separate instructions, user text, prior turns and untrusted
-     * retrieved content inside one text prompt. They do not claim or emulate a
-     * provider-native system role.
+     * The system instruction is transported separately. These markers separate
+     * user text, prior turns, resource metadata and untrusted retrieved content inside the user prompt.
+     *
+     * @param string $question Current user question.
+     * @param array $previous Previous conversation messages.
+     * @param string $content Retrieved content for answer generation.
+     * @param string $resourcetypes JSON object of module short names and grading capabilities for planning.
+     * @return string Delimited payload within the configured token budget.
      */
     public static function build_ai_payload(
-        string $instruction,
         string $question,
         array $previous = [],
-        string $content = ''
+        string $content = '',
+        string $resourcetypes = ''
     ): string {
         do {
-            $payload = '<INSTRUCTION_START>' . $instruction . '<INSTRUCTION_END>'
-                . '<QUESTION_START>' . $question . '<QUESTION_END>';
+            $payload = '<QUESTION_START>' . $question . '<QUESTION_END>';
+            if ($resourcetypes !== '') {
+                $payload .= '<RESOURCE_TYPES_START>' . $resourcetypes . '<RESOURCE_TYPES_END>';
+            }
             if ($previous) {
                 $text = '';
                 foreach ($previous as $entry) {

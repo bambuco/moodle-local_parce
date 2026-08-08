@@ -1,10 +1,10 @@
 Upgrade notes for local_parce
 =============================
 
-Current development pair (2026-08-04)
+Current development pair (2026-08-08)
 =====================================
 
-* Requires Moodle 5.1, PHP 8.2 or newer and aiprovider_bbco 2026080200.
+* Requires Moodle 5.1, PHP 8.2 or newer and aiprovider_bbco 2026080800.
 * Deploy aiprovider_bbco before local_parce.
 * Active conversations and AI prompt history now come exclusively from MODE_SESSION cache.
 * Database tables are durable history, guest audit and AI-action traces only.
@@ -15,7 +15,8 @@ Current development pair (2026-08-04)
 * Successful guest turns and AI traces are persisted for audit; guests cannot query persistent history.
 * Privacy API export/deletion covers conversations and AI traces and invalidates active cache generations.
 * The obsolete cache_ttl setting has been removed. Session lifetime and rollover limits define the active lifecycle.
-* Retrieved Search and Calendar content is untrusted data delimited inside a text prompt. No native provider system role is claimed.
+* Parce instructions replace the effective provider's generic generate_text system instruction for each request.
+* Retrieved Search and Calendar content remains untrusted data delimited inside the separate user prompt.
 * There is no scheduled retention or purge. History and traces are provisionally excluded from course backup/restore.
 
 For this development workspace, unsupported older installations are replaced with a fresh uninstall/reinstall. No production upgrade execution is part of this release validation.
