@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/parce/db" VERSION="20260214" COMMENT="XMLDB file for Moodle local/parce/db"
+<XMLDB PATH="local/parce/db" VERSION="20260807" COMMENT="XMLDB file for Moodle local/parce/db"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -8,8 +8,8 @@
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true" COMMENT="Primary key"/>
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="User who participated in the conversation"/>
-        <FIELD NAME="chatid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Chat context identifier (cm, course or site)"/>
-        <FIELD NAME="conversationkey" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Unique conversation identifier (userid_chatid_sessionid)"/>
+        <FIELD NAME="chatid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Canonical course or system context identifier"/>
+        <FIELD NAME="conversationkey" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Randomised unique conversation identifier"/>
         <FIELD NAME="question" TYPE="text" NOTNULL="true" COMMENT="User question"/>
         <FIELD NAME="response" TYPE="text" NOTNULL="true" COMMENT="System response"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Timestamp when the entry was created"/>
@@ -17,10 +17,11 @@
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id" COMMENT="Primary key"/>
         <KEY NAME="userid" TYPE="foreign" FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
-        <KEY NAME="chatid" TYPE="foreign" FIELDS="chatid" REFTABLE="context" REFFIELDS="id"/>
       </KEYS>
       <INDEXES>
-        <INDEX NAME="userid_chatid_idx" UNIQUE="false" FIELDS="userid,chatid" COMMENT="Index for user and chat lookups"/>
+        <INDEX NAME="userid_chatid_time_id_idx" UNIQUE="false" FIELDS="userid,chatid,timecreated,id" COMMENT="Index for chronological user and chat lookups"/>
+        <INDEX NAME="userid_time_chat_id_idx" UNIQUE="false" FIELDS="userid,timecreated,chatid,id" COMMENT="Index for a user history context listing"/>
+        <INDEX NAME="chat_user_key_time_id_idx" UNIQUE="false" FIELDS="chatid,userid,conversationkey,timecreated,id" COMMENT="Index for context conversation grouping and turns"/>
         <INDEX NAME="conversationkey_idx" UNIQUE="false" FIELDS="conversationkey" COMMENT="Index for conversation key lookups"/>
         <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated" COMMENT="Index for time-based queries"/>
       </INDEXES>
@@ -30,8 +31,11 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="User who triggered the action"/>
         <FIELD NAME="contextid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Moodle context ID where the action was executed"/>
-        <FIELD NAME="chatid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Chat context identifier (course context id or SITEID)"/>
-        <FIELD NAME="conversationkey" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Conversation session key (SHA256 hash)"/>
+        <FIELD NAME="chatid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Canonical course or system context identifier"/>
+        <FIELD NAME="conversationkey" TYPE="char" LENGTH="64" NOTNULL="true" COMMENT="Randomised unique conversation identifier"/>
+        <FIELD NAME="requestid" TYPE="char" LENGTH="64" NOTNULL="false" COMMENT="Correlation identifier for one user turn"/>
+        <FIELD NAME="callid" TYPE="char" LENGTH="64" NOTNULL="false" COMMENT="Correlation identifier for one logical AI call"/>
+        <FIELD NAME="attemptordinal" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Provider attempt order, or zero when no provider ran"/>
         <FIELD NAME="conversationentryid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="FK to local_parce_conversation_entries linking this action to the conversation turn"/>
         <FIELD NAME="actiontype" TYPE="char" LENGTH="20" NOTNULL="true" COMMENT="Type of AI call: question_plan or answer_question"/>
         <FIELD NAME="intent" TYPE="char" LENGTH="30" NOTNULL="false" COMMENT="Detected intent type: base, content, greeting, help"/>
@@ -40,6 +44,10 @@
         <FIELD NAME="prompttext" TYPE="text" NOTNULL="true" COMMENT="Full hackquestion text sent as user prompt"/>
         <FIELD NAME="generatedcontent" TYPE="text" NOTNULL="false" COMMENT="Raw AI response content"/>
         <FIELD NAME="success" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 if the AI call was successful, 0 otherwise"/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="completed" COMMENT="Trace lifecycle status"/>
+        <FIELD NAME="outcome" TYPE="char" LENGTH="32" NOTNULL="false" COMMENT="Stable logical completion outcome"/>
+        <FIELD NAME="completionreason" TYPE="char" LENGTH="32" NOTNULL="false" COMMENT="Stable completion reason retained for reporting"/>
+        <FIELD NAME="durationms" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Monotonic provider duration in milliseconds"/>
         <FIELD NAME="errorcode" TYPE="int" LENGTH="4" NOTNULL="false" SEQUENCE="false" COMMENT="Error code if the call failed"/>
         <FIELD NAME="errormessage" TYPE="text" NOTNULL="false" COMMENT="Error message if the call failed"/>
         <FIELD NAME="responseid" TYPE="char" LENGTH="128" NOTNULL="false" COMMENT="Unique response identifier returned by the AI provider"/>
@@ -47,8 +55,11 @@
         <FIELD NAME="finishreason" TYPE="char" LENGTH="128" NOTNULL="false" COMMENT="Reason the model stopped generating tokens"/>
         <FIELD NAME="prompttokens" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Number of tokens in the prompt"/>
         <FIELD NAME="completiontokens" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Number of tokens in the completion"/>
-        <FIELD NAME="model" TYPE="char" LENGTH="50" NOTNULL="false" COMMENT="AI model used for this request"/>
+        <FIELD NAME="model" TYPE="text" NOTNULL="false" COMMENT="AI model used for this request"/>
         <FIELD NAME="provider" TYPE="char" LENGTH="100" NOTNULL="false" COMMENT="Real provider plugin that processed the request"/>
+        <FIELD NAME="providercomponent" TYPE="char" LENGTH="100" NOTNULL="false" COMMENT="Effective provider component"/>
+        <FIELD NAME="providerinstanceid" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Effective provider instance ID"/>
+        <FIELD NAME="providername" TYPE="char" LENGTH="255" NOTNULL="false" COMMENT="Effective configured provider name"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="Timestamp when the action was created"/>
         <FIELD NAME="timecompleted" TYPE="int" LENGTH="10" NOTNULL="false" SEQUENCE="false" COMMENT="Timestamp when the AI response was received"/>
       </FIELDS>
@@ -61,6 +72,9 @@
         <INDEX NAME="userid_chatid_idx" UNIQUE="false" FIELDS="userid,chatid"/>
         <INDEX NAME="actiontype_idx" UNIQUE="false" FIELDS="actiontype"/>
         <INDEX NAME="conversationkey_idx" UNIQUE="false" FIELDS="conversationkey"/>
+        <INDEX NAME="requestid_idx" UNIQUE="false" FIELDS="requestid"/>
+        <INDEX NAME="callid_idx" UNIQUE="false" FIELDS="callid"/>
+        <INDEX NAME="metrics_idx" UNIQUE="false" FIELDS="actiontype,outcome,timecreated"/>
         <INDEX NAME="intent_idx" UNIQUE="false" FIELDS="intent"/>
         <INDEX NAME="timecreated_idx" UNIQUE="false" FIELDS="timecreated"/>
       </INDEXES>

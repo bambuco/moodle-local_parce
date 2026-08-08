@@ -31,23 +31,19 @@ use core\hook\output\before_footer_html_generation;
  */
 class output {
     /**
-     * Load marked.js library before HTTP headers are sent.
-     * This ensures the library is available for AMD modules.
+     * Initialise the chat before HTTP headers are sent.
      *
      * @param \core\hook\before_http_headers $hook The hook object
      */
     public static function before_http_headers(\core\hook\output\before_http_headers $hook): void {
-        global $PAGE, $COURSE;
+        global $PAGE;
 
         if (!\local_parce\local\controller::chat_include()) {
             return;
         }
 
-        // Load marked.js library for markdown parsing.
-        $PAGE->requires->js(new \moodle_url('/local/parce/lib/marked/marked.min.js'), true);
-
-        // Initialize the chat module.
-        $PAGE->requires->js_call_amd('local_parce/chat', 'init', [$COURSE->id]);
+        $chatcontext = \local_parce\local\controller::get_chat_context($PAGE->context);
+        $PAGE->requires->js_call_amd('local_parce/chat', 'init', [$chatcontext->id]);
     }
 
     /**

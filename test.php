@@ -24,6 +24,10 @@
 
 require('../../config.php');
 
+if (!debugging('', DEBUG_DEVELOPER)) {
+    redirect(new moodle_url('/'));
+}
+
 require_login();
 
 $url = new moodle_url('/local/parce/test.php', []);

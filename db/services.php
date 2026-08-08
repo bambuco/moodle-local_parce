@@ -30,7 +30,15 @@ defined('MOODLE_INTERNAL') || die();
 $functions = [
     'local_parce_answer' => [
         'classname' => local_parce\external\answer::class,
-        'description' => 'Receive a users question and search for an answer.',
+        'description' => 'Answer a question and return a structured success, error, or rate-limit result.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/parce:usechat',
+    ],
+
+    'local_parce_get_active_conversation' => [
+        'classname' => local_parce\external\get_active_conversation::class,
+        'description' => 'Get the complete current session conversation from cache.',
         'type' => 'read',
         'ajax' => true,
         'capabilities' => 'local/parce:usechat',
@@ -38,9 +46,36 @@ $functions = [
 
     'local_parce_get_conversation' => [
         'classname' => local_parce\external\get_conversation::class,
-        'description' => 'Get paginated chat conversation history.',
+        'description' => 'Get persistent paginated chat conversation history.',
         'type' => 'read',
         'ajax' => true,
-        'capabilities' => 'local/parce:usechat',
+    ],
+
+    'local_parce_list_history_contexts' => [
+        'classname' => local_parce\external\list_history_contexts::class,
+        'description' => 'List contexts containing persistent conversation history.',
+        'type' => 'read',
+        'ajax' => true,
+    ],
+
+    'local_parce_list_history_conversations' => [
+        'classname' => local_parce\external\list_history_conversations::class,
+        'description' => 'List persistent conversations in a context.',
+        'type' => 'read',
+        'ajax' => true,
+    ],
+
+    'local_parce_get_history_turns' => [
+        'classname' => local_parce\external\get_history_turns::class,
+        'description' => 'Get turns from one persistent conversation.',
+        'type' => 'read',
+        'ajax' => true,
+    ],
+
+    'local_parce_search_history' => [
+        'classname' => local_parce\external\search_history::class,
+        'description' => 'Search visible persistent conversation content by complete phrase.',
+        'type' => 'read',
+        'ajax' => true,
     ],
 ];

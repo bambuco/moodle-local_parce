@@ -51,7 +51,7 @@ export const init = async(chatid) => {
          * @param {string} message The message to send
          */
         sendMessage: function(message) {
-            ChatHandler.sendMessage(message);
+            return ChatHandler.sendMessage(message);
         },
 
         /**
@@ -62,55 +62,59 @@ export const init = async(chatid) => {
             var self = this;
 
             // Listen for chat bubble click.
-            $(document).on('click', '.local_parce-chat-bubble', function(e) {
+            $(document).off('.localParceChat');
+
+            $(document).on('click.localParceChat', '.local_parce-chat-bubble', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                ChatUI.toggleWindow();
+                ChatUI.toggleWindow(this);
             });
 
             // Listen for send message button click.
-            $(document).on('click', '.local_parce-send-btn', function(e) {
+            $(document).on('click.localParceChat', '.local_parce-send-btn', function(e) {
                 e.preventDefault();
                 var message = $('.local_parce-message-input').val().trim();
-                if (message.length > 0) {
-                    self.sendMessage(message);
+                if (message.length > 0 && self.sendMessage(message) !== false) {
                     $('.local_parce-message-input').val('');
                 }
             });
 
             // Listen for enter key in message input.
-            $(document).on('keypress', '.local_parce-message-input', function(e) {
-                if (e.which === 13 && !e.shiftKey) {
+            $(document).on('keydown.localParceChat', '.local_parce-message-input', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     var message = $(this).val().trim();
-                    if (message.length > 0) {
-                        self.sendMessage(message);
+                    if (message.length > 0 && self.sendMessage(message) !== false) {
                         $(this).val('');
                     }
                 }
             });
 
             // Auto-resize message input.
-            $(document).on('input', '.local_parce-message-input', function() {
+            $(document).on('input.localParceChat', '.local_parce-message-input', function() {
                 this.style.height = '20px'; // Default height.
                 this.style.height = (this.scrollHeight) + 'px';
             });
 
             // Listen for close button click.
-            $(document).on('click', '.local_parce-close-btn', function(e) {
+            $(document).on('click.localParceChat', '.local_parce-close-btn', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
                 ChatUI.closeWindow();
             });
 
             // Close window when clicking outside.
-            $(document).on('click', function(e) {
-                var chatWindow = $('.local_parce-chat-window');
-                var chatBubble = $('.local_parce-chat-bubble');
-                if (chatWindow.is(':visible') &&
-                    !chatWindow.has(e.target).length &&
-                    !chatBubble.has(e.target).length &&
-                    !$(e.target).hasClass('local_parce-chat-bubble')) {
+            $(document).on('click.localParceChat', function(e) {
+                var widget = $('#local_parce-chat-container');
+                if (ChatUI.isWindowOpen && !widget.is(e.target) && !widget.has(e.target).length) {
+                    ChatUI.closeWindow();
+                }
+            });
+
+            // Escape closes a non-modal dialog from anywhere without trapping focus.
+            $(document).on('keydown.localParceChat', function(e) {
+                if (e.key === 'Escape' && ChatUI.isWindowOpen) {
+                    e.preventDefault();
                     ChatUI.closeWindow();
                 }
             });

@@ -41,10 +41,23 @@ class question_handler {
      */
     private static array $lastactionids = [];
 
+    /** @var int[] IDs created by the most recent logical AI call. */
+    private static array $lastcallids = [];
+
     /**
      * @var bool Whether the last process() call produced a successful content response.
      */
     private static bool $lastsuccessful = false;
+
+    /**
+     * @var array Structured outcome of the last process() call.
+     */
+    private static array $lastresult = [
+        'status' => 'error',
+        'successful' => false,
+        'retryable' => true,
+        'errorcode' => 'processing_error',
+    ];
 
     /**
      * Get the AI action IDs from the last process() call.
@@ -65,95 +78,111 @@ class question_handler {
     }
 
     /**
+     * Get the structured outcome of the last process() call.
+     *
+     * @return array Status, success and retry metadata. retryafter is present only when known.
+     */
+    public static function get_last_result(): array {
+        return self::$lastresult;
+    }
+
+    /**
+     * Resolve the configured BBCO provider for Parce.
+     *
+     * @return \core_ai\provider|null The configured BBCO provider or null when unavailable.
+     */
+    public static function resolve_ai_provider(): ?\core_ai\provider {
+        return (new ai_gateway())->resolve_provider();
+    }
+
+    /**
      * Process a question and return a response.
      *
      * @param string $question The question text from the user.
      * @param object $context The question context.
+     * @param ai_gateway|null $gateway Optional test gateway.
      * @return string The response to the question.
      */
-    public static function process($question, $context = null): string {
+    public static function process($question, $context = null, ?ai_gateway $gateway = null): string {
         global $USER;
 
         self::$lastactionids = [];
         self::$lastsuccessful = false;
+        self::$lastresult = self::failure_result('processing_error', true);
+        $cacheversion = controller::get_active_cache_version();
 
         // Validate input.
         if (empty($question)) {
-            return get_string('error_empty_question', 'local_parce');
+            return self::failure_response('error_empty_question', 'invalid_question', false);
         }
 
-        $coursecontext = $context->get_course_context(false);
-        if (empty($context) || empty($coursecontext)) {
-            $context = \context_system::instance();
-            $chatid = SITEID;
-        } else {
-            $chatid = $coursecontext->id;
-        }
+        $chatid = controller::get_chat_context($context)->id;
 
         try {
             // Manage static requirements.
             $helptext = get_string('static_help', 'local_parce');
             if (strtolower($question) === strtolower($helptext)) {
                 $intentobj = new intent\help($context, null);
-                self::$lastsuccessful = true;
-                return self::pre_response($question, $intentobj->get_content());
-            }
-
-            // Get the AI manager from DI container.
-            $manager = \core\di::get(\core_ai\manager::class);
-            $providerrecord = $manager->get_provider_records(['provider' => 'aiprovider_bbco\provider', 'enabled' => 1]);
-
-            if (empty($providerrecord)) {
-                return get_string('error_ai_unavailable', 'local_parce');
-            }
-
-            $record = reset($providerrecord);
-            $provider = new \aiprovider_bbco\provider(
-                true,
-                id: $record->id,
-                name: $record->name,
-                config: $record->config,
-                actionconfig: $record->actionconfig,
-            );
-
-            if ($provider->is_provider_configured() === false) {
-                return get_string('error_ai_unavailable', 'local_parce');
+                return self::success_response($question, $intentobj->get_content());
             }
 
             $conversationkey = controller::generate_conversation_key($USER->id, $chatid);
+            $requestid = bin2hex(random_bytes(32));
+            $gateway = $gateway ?? new ai_gateway();
 
             // Time 1: Get the real intention of the question.
             $previous = self::get_conversation_context($USER->id, $chatid);
-            $hackquestion = self::make_hackquestion($question, $previous);
-
-            // Create the appropriate action with the user's question.
+            $prompt = get_config('local_parce', 'question_plan_prompt');
+            if (empty($prompt)) {
+                $prompt = get_string('default_question_plan_prompt', 'local_parce');
+            }
+            $hackquestion = controller::build_ai_payload($prompt, $question, $previous);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
                 prompttext: $hackquestion
             );
 
-            $prompt = get_config('local_parce', 'question_plan_prompt');
-            if (empty($prompt)) {
-                $prompt = get_string('default_question_plan_prompt', 'local_parce');
-            }
-
-            $actionprovider = new \aiprovider_bbco\process_generate_text($provider, $action);
-            $actionprovider->prompt = $prompt;
-            $response = $actionprovider->process();
-
-            // Log question_plan action.
-            $planactionid = controller::log_ai_action(
+            $generation = self::traced_generate(
+                $gateway,
+                $action,
                 $USER->id,
                 $context->id,
                 $chatid,
                 $conversationkey,
+                $requestid,
                 'question_plan',
                 $prompt,
                 $hackquestion,
-                $response
+                $cacheversion,
+                function ($response): string {
+                    if (!$response->get_success()) {
+                        if ($response->get_errorcode() === 429) {
+                            return 'rate_limited';
+                        }
+                        return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+                    }
+                    $content = $response->get_response_data()['generatedcontent'] ?? '';
+                    if ($content === '') {
+                        return 'empty_response';
+                    }
+                    $decoded = json_decode($content, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        return 'invalid_json';
+                    }
+                    $valid = ['base', 'content', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
+                    return is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $valid, true)
+                        ? 'success' : 'invalid_intent';
+                }
             );
-            self::$lastactionids[] = $planactionid;
+            if ($generation === null) {
+                return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
+            }
+            $response = $generation['response'];
+            if (!controller::is_active_cache_version($cacheversion)) {
+                return self::failure_response('error_processing_question', 'request_cancelled', true);
+            }
+            $planactionid = self::$lastcallids[0];
 
             $generatedcontent = '';
             // Check if successful.
@@ -161,19 +190,19 @@ class question_handler {
                 $responsedata = $response->get_response_data();
 
                 if (empty($responsedata['generatedcontent'])) {
-                    return self::pre_response($question, get_string('error_no_content', 'local_parce'));
+                    return self::failure_response('error_no_content', 'planning_empty', true);
                 }
                 $generatedcontent = $responsedata['generatedcontent'];
             } else {
-                return get_string('error_ai_failed', 'local_parce') . ': ' . $response->get_errormessage();
+                return self::provider_failure_response($response, 'planning_failed');
             }
 
             // Time 2: Get the response based on the intention.
             $type = @json_decode($generatedcontent, true);
 
-            $intentavailable = ['base', 'content', 'dates', 'greeting', 'help'];
+            $intentavailable = ['base', 'content', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
             if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
-                return get_string('error_processing_question', 'local_parce');
+                return self::failure_response('error_processing_question', 'invalid_intent', true);
             }
 
             $intentname = $type['type'];
@@ -183,31 +212,53 @@ class question_handler {
             }
 
             // Update the plan action with the detected intent.
-            controller::update_ai_action($planactionid, $intentname, $intentparams);
+            foreach (self::$lastcallids as $actionid) {
+                controller::update_ai_action($actionid, $intentname, $intentparams);
+            }
 
             $intentclass = '\local_parce\local\intent\\' . $intentname;
 
             if (!class_exists($intentclass)) {
-                return get_string('error_processing_question', 'local_parce');
+                return self::failure_response('error_processing_question', 'invalid_intent', true);
             }
 
             $intentobj = new $intentclass($context, null, $intentparams);
 
-            if (!$intentobj->require_ia()) {
-                self::$lastsuccessful = true;
-                return self::pre_response($question, $intentobj->get_content());
-            }
-
             try {
                 $content = $intentobj->get_content();
-            } catch (\Exception $e) {
-                return self::pre_response($question, $e->getMessage());
+            } catch (\moodle_exception $e) {
+                $notfounderrors = [
+                    'intent_content_notfound',
+                    'intent_dates_notfound',
+                    'intent_grades_notfound',
+                    'intent_progress_notfound',
+                    'intent_resource_notfound',
+                ];
+                if (in_array($e->errorcode, $notfounderrors, true)) {
+                    return self::success_response($question, $e->getMessage(), false);
+                }
+                return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
+            } catch (\Throwable $e) {
+                return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
+            }
+
+            if (!$intentobj->require_ia()) {
+                return self::success_response($question, $content);
+            }
+
+            // Course and similar search records may only contain a name and URL. Return those directly even if an
+            // older or customised planning prompt classified the navigational request as content.
+            if ($intentname === 'content' && intent\content::are_link_only_results($content)) {
+                $resources = intent\content::format_search_results($content, 'resource_results');
+                if ($resources !== '') {
+                    return self::success_response($question, $resources);
+                }
             }
 
             if (empty($content)) {
                 $allowopenanswer = get_config('local_parce', 'allowopenanswer');
                 if (!$allowopenanswer) {
-                    return self::pre_response($question, get_string('msg_no_content', 'local_parce'));
+                    return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
                 }
 
                 $content = get_config('local_parce', 'openanswer_prompt');
@@ -218,39 +269,51 @@ class question_handler {
             }
 
             $previous = self::get_conversation_context($USER->id, $chatid);
-            $hackquestion = self::make_hackquestion($question, $previous, $content);
-
+            $answerprompt = get_config('local_parce', 'answer_question_prompt');
+            if (empty($answerprompt)) {
+                $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
+            }
+            $hackquestion = controller::build_ai_payload($answerprompt, $question, $previous, $content);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
                 prompttext: $hackquestion
             );
 
-            $answerprompt = get_config('local_parce', 'answer_question_prompt');
-            if (empty($answerprompt)) {
-                $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
-            }
-
-            $actionprovider = new \aiprovider_bbco\process_generate_text($provider, $action);
-            $actionprovider->prompt = $answerprompt;
-
-            $response = $actionprovider->process();
-
-            // Log answer_question action.
-            $answeractionid = controller::log_ai_action(
+            $generation = self::traced_generate(
+                $gateway,
+                $action,
                 $USER->id,
                 $context->id,
                 $chatid,
                 $conversationkey,
+                $requestid,
                 'answer_question',
                 $answerprompt,
                 $hackquestion,
-                $response
+                $cacheversion,
+                function ($response): string {
+                    if (!$response->get_success()) {
+                        if ($response->get_errorcode() === 429) {
+                            return 'rate_limited';
+                        }
+                        return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+                    }
+                    return empty($response->get_response_data()['generatedcontent']) ? 'empty_response' : 'success';
+                }
             );
-            self::$lastactionids[] = $answeractionid;
+            if ($generation === null) {
+                return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
+            }
+            $response = $generation['response'];
+            if (!controller::is_active_cache_version($cacheversion)) {
+                return self::failure_response('error_processing_question', 'request_cancelled', true);
+            }
 
             // Set the intent on the answer action too.
-            controller::update_ai_action($answeractionid, $intentname, $intentparams);
+            foreach (self::$lastcallids as $actionid) {
+                controller::update_ai_action($actionid, $intentname, $intentparams);
+            }
 
             $generatedcontent = '';
             // Check if successful.
@@ -258,23 +321,184 @@ class question_handler {
                 $responsedata = $response->get_response_data();
 
                 if (empty($responsedata['generatedcontent'])) {
-                    return self::pre_response($question, get_string('error_no_content', 'local_parce'));
+                    return self::failure_response('error_no_content', 'response_empty', true);
                 }
                 $generatedcontent = $responsedata['generatedcontent'];
             } else {
-                return get_string('error_ai_failed', 'local_parce') . ': ' . $response->get_errormessage();
+                return self::provider_failure_response($response, 'response_failed');
+            }
+
+            // NOT_FOUND is an internal provider sentinel and must never be displayed or decorated with references.
+            if (trim($generatedcontent) === 'NOT_FOUND') {
+                $suggestions = intent\content::format_search_results($content, 'content_suggestions');
+                if ($suggestions !== '') {
+                    return self::success_response($question, $suggestions);
+                }
+                return self::success_response($question, get_string('answer_notfound', 'local_parce'), false);
             }
 
             // Append course references if the content came from courses other than the current one.
-            $generatedcontent .= self::build_course_references($content, $context);
+            $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
 
-            self::$lastsuccessful = true;
-            return self::pre_response($question, $generatedcontent);
+            return self::success_response($question, $generatedcontent);
         } catch (\core\exception\coding_exception $e) {
-            return get_string('error_ai_unavailable', 'local_parce');
+            return self::failure_response('error_ai_unavailable', 'ai_unavailable', true, $e->getMessage());
         } catch (\Throwable $e) {
-            return get_string('error_processing_question', 'local_parce');
+            return self::failure_response('error_processing_question', 'processing_error', true, $e->getMessage());
         }
+    }
+
+    /**
+     * Execute one logical AI call with a trace that is closed on every path.
+     *
+     * @return array|null Gateway result, or null when no provider is available
+     */
+    private static function traced_generate(
+        ai_gateway $gateway,
+        object $action,
+        int $userid,
+        int $contextid,
+        int $chatid,
+        string $conversationkey,
+        string $requestid,
+        string $actiontype,
+        string $prompt,
+        string $prompttext,
+        int $cacheversion,
+        callable $classify
+    ): ?array {
+        $callid = bin2hex(random_bytes(32));
+        $actionid = controller::start_ai_action(
+            $userid,
+            $contextid,
+            $chatid,
+            $conversationkey,
+            $requestid,
+            $callid,
+            $actiontype,
+            $prompt,
+            $prompttext
+        );
+        $generation = [];
+        $response = null;
+        $outcome = 'exception';
+        $technical = null;
+        $callstarted = hrtime(true);
+        try {
+            $provider = $gateway->resolve_provider();
+            if ($provider === null) {
+                $outcome = 'no_provider';
+                return null;
+            }
+            $generation['providerattempted'] = true;
+            $generation = $gateway->generate($provider, $action);
+            $generation['providerattempted'] = true;
+            $generation['durationms'] ??= max(1, (int) ceil((hrtime(true) - $callstarted) / 1_000_000));
+            $response = $generation['response'];
+            $outcome = controller::is_active_cache_version($cacheversion) ? $classify($response) : 'request_cancelled';
+            return $generation;
+        } catch (\Throwable $e) {
+            $technical = $e->getMessage();
+            $outcome = self::is_timeout_message($technical) ? 'timeout' : 'exception';
+            throw $e;
+        } finally {
+            $generation['durationms'] ??= max(1, (int) ceil((hrtime(true) - $callstarted) / 1_000_000));
+            $ids = controller::complete_ai_action($actionid, $outcome, $generation, $response, $technical);
+            self::$lastcallids = $ids;
+            self::$lastactionids = array_merge(self::$lastactionids, $ids);
+        }
+    }
+
+    /**
+     * Identify timeout failures without exposing their technical message publicly.
+     *
+     * @param string|null $message Provider or exception detail
+     * @return bool
+     */
+    private static function is_timeout_message(?string $message): bool {
+        return $message !== null && preg_match('/\b(?:timed?\s*out|timeout)\b/i', $message) === 1;
+    }
+
+    /**
+     * Record a successful result and return its display text.
+     *
+     * @param string $question Original question
+     * @param string $response Display response
+     * @param bool $hascontent Whether the response contains useful content that should be retained in the conversation.
+     * @return string
+     */
+    private static function success_response(string $question, string $response, bool $hascontent = true): string {
+        self::$lastsuccessful = $hascontent;
+        self::$lastresult = [
+            'status' => 'success',
+            'successful' => true,
+            'retryable' => false,
+        ];
+        return self::pre_response($question, $response);
+    }
+
+    /**
+     * Convert a provider error to the public operational contract.
+     *
+     * @param \core_ai\aiactions\responses\response_base $response Provider response
+     * @param string $errorcode Stable stage-specific error code
+     * @return string
+     */
+    private static function provider_failure_response(
+        \core_ai\aiactions\responses\response_base $response,
+        string $errorcode
+    ): string {
+        $providercode = $response->get_errorcode();
+        if ($providercode === 429) {
+            return self::failure_response(
+                'error_rate_limited',
+                'rate_limited',
+                true,
+                $response->get_errormessage(),
+                'rate_limited'
+            );
+        }
+
+        $retryable = $providercode >= 500 && $providercode <= 599;
+        return self::failure_response('error_ai_failed', $errorcode, $retryable, $response->get_errormessage());
+    }
+
+    /**
+     * Build and record a safe failure response.
+     *
+     * @param string $stringid Generic language string identifier
+     * @param string $errorcode Stable machine-readable code
+     * @param bool $retryable Whether a later user-initiated retry may succeed
+     * @param string|null $technical Technical detail
+     * @param string $status Result discriminator
+     * @return string
+     */
+    private static function failure_response(
+        string $stringid,
+        string $errorcode,
+        bool $retryable,
+        ?string $technical = null,
+        string $status = 'error'
+    ): string {
+        self::$lastresult = self::failure_result($errorcode, $retryable, $status);
+        return get_string($stringid, 'local_parce');
+    }
+
+    /**
+     * Create failure metadata without inventing a retry-after value.
+     *
+     * @param string $errorcode Stable machine-readable code
+     * @param bool $retryable Whether a later user-initiated retry may succeed
+     * @param string $status Result discriminator
+     * @return array
+     */
+    private static function failure_result(string $errorcode, bool $retryable, string $status = 'error'): array {
+        return [
+            'status' => $status,
+            'successful' => false,
+            'retryable' => $retryable,
+            'errorcode' => $errorcode,
+        ];
     }
 
     /**
@@ -293,81 +517,38 @@ class question_handler {
     /**
      * Get conversation context from cache.
      *
-     * Retrieves the last 5 messages from the cached conversation to provide
-     * context for the AI model.
+     * Retrieves recent complete turns from the active cached conversation,
+     * subject to the prompt turn and estimated-token budgets.
      *
      * @param int $userid The user ID
      * @param int $chatid The chat ID (course ID)
-     * @return array Array of last 5 conversation entries with role and content
+     * @return array Recent complete conversation entries with role and content
      */
     private static function get_conversation_context(int $userid, int $chatid): array {
-        $allentries = controller::get_conversation_entries($userid, $chatid);
-
-        if (empty($allentries)) {
-            return [];
-        }
-
-        // Get last 5 entries, keeping them in chronological order.
-        $lastfive = array_slice($allentries, -5);
-
-        // Format for AI context: only include role and content.
-        $context = [];
-        foreach ($lastfive as $entry) {
-            $context[] = [
-                'role' => $entry['role'],
-                'content' => $entry['content'],
-            ];
-        }
-
-        return $context;
+        return controller::get_prompt_context($userid, $chatid);
     }
 
     /**
-     * Create a hack question format to send to the AI model, including the original question,
-     * previous conversation context, and any relevant content.
+     * Build markdown source references from the search results JSON.
      *
-     * This format allows the AI model to better understand the user's question in the context
-     * of the conversation and any relevant information, improving the quality of the response.
+     * Uses each result's specific name and URL. The containing course is only a fallback when the result does not
+     * provide its own link, and the current course is excluded from those fallback references.
      *
-     * @param string $question The original question from the user.
-     * @param array $previous The previous conversation context, formatted as an array of role/content pairs.
-     * @param string $content Any relevant content that should be included for the AI to generate a response.
-     * @return string The formatted hack question to send to the AI model.
-     */
-    private static function make_hackquestion(string $question, array $previous = [], string $content = ''): string {
-        $hackquestion = '<QUESTION_START>' . $question . '<QUESTION_END>';
-
-        if (!empty($previous)) {
-            $previoustext = '';
-            foreach ($previous as $entry) {
-                $previoustext .= '<ROLE_START>' . $entry['role'] . '<ROLE_END>';
-                $previoustext .= '<MESSAGE_START>' . $entry['content'] . '<MESSAGE_END>';
-            }
-            $hackquestion .= '<PREVIOUS_START>' . $previoustext . '<PREVIOUS_END>';
-        }
-
-        if (!empty($content)) {
-            $hackquestion .= '<CONTENT_START>' . $content . '<CONTENT_END>';
-        }
-
-        return $hackquestion;
-    }
-
-    /**
-     * Build markdown course references from the search results JSON.
-     *
-     * Extracts unique course names/URLs from the content JSON and returns
-     * a markdown-formatted line for each course, excluding the current context course.
-     *
-     * @param string $contentjson The JSON string with search results containing coursename and courseurl fields.
+     * @param string $contentjson The JSON string with retrieved search results.
      * @param \core\context $context The current context to determine if the course reference is needed.
+     * @param string $response Generated response in which references may already appear.
      * @return string Markdown-formatted course references or empty string.
      */
-    private static function build_course_references(string $contentjson, \core\context $context): string {
+    private static function build_course_references(
+        string $contentjson,
+        \core\context $context,
+        string $response
+    ): string {
         $items = @json_decode($contentjson, true);
         if (empty($items) || !is_array($items)) {
             return '';
         }
+        $response = html_entity_decode($response, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         $currentcourseid = 0;
         $coursecontext = $context->get_course_context(false);
@@ -375,35 +556,38 @@ class question_handler {
             $currentcourseid = $coursecontext->instanceid;
         }
 
-        // Collect unique courses that differ from the current one.
-        $courses = [];
+        // Collect unique source resources, falling back to their containing course only when necessary.
+        $sources = [];
         foreach ($items as $item) {
-            if (empty($item['coursename']) || empty($item['courseurl'])) {
+            $usescoursefallback = empty($item['name']) || empty($item['url']);
+            $name = $usescoursefallback ? ($item['coursename'] ?? '') : $item['name'];
+            $url = $usescoursefallback ? ($item['courseurl'] ?? '') : $item['url'];
+            if ($name === '' || $url === '') {
                 continue;
             }
-            $url = $item['courseurl'];
-            if (isset($courses[$url])) {
+            $decodedurl = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if (isset($sources[$decodedurl]) || strpos($response, $decodedurl) !== false) {
                 continue;
             }
-            // Skip the site-level course and the current course context.
-            if (preg_match('/[?&]id=(\d+)/', $url, $matches)) {
+            // A fallback link to the current or site course does not identify the actual source.
+            if ($usescoursefallback && preg_match('/[?&]id=(\d+)/', $decodedurl, $matches)) {
                 $courseid = (int)$matches[1];
                 if ($courseid === SITEID || $courseid === $currentcourseid) {
                     continue;
                 }
             }
-            $courses[$url] = $item['coursename'];
+            $sources[$decodedurl] = ['name' => $name, 'url' => $url];
         }
 
-        if (empty($courses)) {
+        if (empty($sources)) {
             return '';
         }
 
         $lines = "\n\n---\n";
-        foreach ($courses as $url => $name) {
-            $lines .= '📚 ' . get_string('course_reference', 'local_parce', [
-                'coursename' => $name,
-                'courseurl' => $url,
+        foreach ($sources as $source) {
+            $lines .= '- 📚 ' . get_string('course_reference', 'local_parce', [
+                'coursename' => $source['name'],
+                'courseurl' => $source['url'],
             ]) . "\n";
         }
 

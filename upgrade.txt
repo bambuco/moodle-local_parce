@@ -1,27 +1,26 @@
-Upgrade Notes for Local Parce Plugin
-====================================
+Upgrade notes for local_parce
+=============================
 
-Version 1.0.0 (2026-02-11)
-==========================
+Current development pair (2026-08-04)
+=====================================
 
-* Added third-party library: Marked.js v11.1.1
-  - Location: lib/marked/marked.min.js
-  - License: MIT (GPLv3 compatible)
-  - Description: A markdown parser and compiler
-  - Added: readme_moodle.txt with update instructions
-  - See lib/marked/readme_moodle.txt for details
+* Requires Moodle 5.1, PHP 8.2 or newer and aiprovider_bbco 2026080200.
+* Deploy aiprovider_bbco before local_parce.
+* Active conversations and AI prompt history now come exclusively from MODE_SESSION cache.
+* Database tables are durable history, guest audit and AI-action traces only.
+* chatid stores the canonical course or system context ID.
+* conversationkey is a cryptographically random thread identifier independent of PHP session IDs.
+* Active threads rotate at their configured limits, with hard maxima of 40 complete turns and 16,000 estimated tokens.
+* Prompt history, retrieved data and complete payload budgets are 8,000, 8,000 and 18,000 estimated tokens respectively.
+* Successful guest turns and AI traces are persisted for audit; guests cannot query persistent history.
+* Privacy API export/deletion covers conversations and AI traces and invalidates active cache generations.
+* The obsolete cache_ttl setting has been removed. Session lifetime and rollover limits define the active lifecycle.
+* Retrieved Search and Calendar content is untrusted data delimited inside a text prompt. No native provider system role is claimed.
+* There is no scheduled retention or purge. History and traces are provisionally excluded from course backup/restore.
 
-* New Markdown Rendering Feature
-  - Added MarkdownRenderer module (amd/src/markdown-renderer.js)
-  - Chat responses with markdown syntax are automatically parsed and rendered as HTML
-  - Supports common markdown syntax: headers, bold, italic, lists, links, code blocks, etc.
-  
-* Updated Files:
-  - classes/hooks/output.php: Added marked.js library loading via PHP hook
-  - amd/src/markdown-renderer.js: New module for markdown processing
-  - amd/src/chat-handler.js: Integrated markdown detection and rendering for bot responses
-  - thirdpartylibs.xml: Registered marked.js library
+For this development workspace, unsupported older installations are replaced with a fresh uninstall/reinstall. No production upgrade execution is part of this release validation.
 
-* Hook Changes:
-  - Marked.js is loaded globally before AMD modules via the output hook
-  - This ensures window.marked is available to all AMD modules that need it
+Third-party Markdown library
+============================
+
+Marked.js v11.1.1 remains registered under lib/marked with its MIT licence. Server-side Moodle formatting and cleaning is the security boundary for returned Markdown.

@@ -1,441 +1,151 @@
-# Technical Specification - Local Parce Q&A Chat Widget
+# Local Parce technical specification
 
-## Overview
+## Supported platform
 
-Local Parce is a Moodle 5.1 local plugin that provides a floating Q&A chat widget. This document specifies the technical implementation details.
+| Component | Supported version |
+| --- | --- |
+| Moodle | 5.1 (`2025100600`) |
+| PHP | 8.2+ as required by Moodle 5.1 |
+| `aiprovider_bbco` | `2026080600` or newer |
+| `local_parce` | `2026080600` |
 
-## System Requirements
+Both plugins remain `MATURITY_BETA` after phases 4 and 5B. Production concurrency, load/latency, retention-policy and operational dashboard/alert validation are release gates before considering stable maturity.
 
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| Moodle | 5.1 | 5.1+ |
-| PHP | 7.4 | 8.0+ |
-| jQuery | (included) | Bootstrap compatible |
-| Bootstrap | 4.x | 5.x |
-| Browsers | ES6 support | Modern browsers |
+## Ownership boundaries
 
-## Architecture
-
-### Layer Model
-
-```
-┌─────────────────────────────────────────┐
-│      User Interface Layer               │
-│  (HTML, CSS, DOM Elements)              │
-└─────────────────────────────────────────┘
-         ▲
-         │
-┌─────────────────────────────────────────┐
-│   JavaScript Application Layer          │
-│  (AMD modules, jQuery, Events)          │
-└─────────────────────────────────────────┘
-         ▲
-         │
-┌─────────────────────────────────────────┐
-│    PHP Integration Layer                │
-│ (Hooks, Settings, Template Rendering)   │
-└─────────────────────────────────────────┘
-         ▲
-         │
-┌─────────────────────────────────────────┐
-│      Moodle Core                        │
-│  (Database, Auth, Template Engine)      │
-└─────────────────────────────────────────┘
+```text
+Browser widget
+    | local_parce_answer / local_parce_get_active_conversation
+    v
+MODE_SESSION cache ---------------> AI prompt context
+    | successful complete turn
+    v
+Conversation history DB ----------> history/Privacy API only
+    |
+    +-----------------------------> AI action traces
 ```
 
-## Module Specifications
-
-### chat.js
-
-**Type**: AMD Module
-**Dependencies**: jquery, local_parce/chat-ui, local_parce/chat-handler
-
-**Exported Object**:
-```javascript
-{
-    init: function() → undefined
-}
-```
-
-**Responsibilities**:
-1. Coordinate module initialization
-2. Register event listeners
-3. Route events to appropriate handlers
-
-**Execution Order**:
-1. Initialize ChatUI
-2. Initialize ChatHandler
-3. Setup all event listeners
-4. Ready for user interaction
-
-### chat-ui.js
-
-**Type**: AMD Module
-**Dependencies**: jquery
-
-**Exported Object**:
-```javascript
-{
-    init: function() → undefined,
-    createChatWindow: function() → undefined,
-    toggleWindow: function() → undefined,
-    openWindow: function() → undefined,
-    closeWindow: function() → undefined,
-    focusInputField: function() → undefined,
-    addMessage: function(message, type) → undefined,
-    showLoading: function() → undefined,
-    hideLoading: function() → undefined,
-    clearMessages: function() → undefined,
-    scrollToBottom: function() → undefined,
-    escapeHtml: function(text) → string
-}
-```
-
-### chat-handler.js
-
-**Type**: AMD Module
-**Dependencies**: jquery, local_parce/chat-ui
-
-**Exported Object**:
-```javascript
-{
-    init: function() → undefined,
-    sendMessage: function(message) → undefined,
-    submitQuestion: function(question) → Promise
-}
-```
-
-**State Management**:
-- `isSending` (boolean) - Prevent duplicate submissions
-
-**Process Flow**:
-1. User enters message
-2. `sendMessage()` called
-3. Message added to UI (user style)
-4. Loading indicator shown
-5. `submitQuestion()` sends AJAX
-6. Response received or error
-7. Response added to UI (bot style)
-8. Loading indicator removed
-
-**AJAX Behavior** (Phase 2):
-- Endpoint: (TBD - Moodle web service)
-- Method: POST
-- Headers: Include Moodle CSRF token
-- Timeout: 30 seconds (configurable)
-- Retry: On failure (TBD)
-
-## PHP Implementation
-
-### lib.php Functions
-
-**`local_parce_page_init(moodle_page $page)`**
-
-Moodle Hook: page_init
-
-Purpose: Initialize page resources
-
-Behavior:
-1. Check plugin enabled status
-2. Verify user permissions
-3. Load jQuery
-4. Load CSS stylesheet
-5. Initialize AMD modules
-
-Configuration Checks:
-- `local_parce/enabled` (bool)
-- `local_parce/enable_guests` (bool)
-
-**`local_parce_after_footer()`**
-
-Moodle Hook: after_footer
-
-Purpose: Inject chat bubble HTML
-
-Behavior:
-1. Check plugin enabled status
-2. Verify user permissions
-3. Get renderer instance
-4. Render chat_bubble template
-5. Return HTML for injection
-
-Returns: HTML string or empty string
-
-### settings.php Settings
-
-| Setting Key | Type | Default | Options |
-|------------|------|---------|---------|
-| `local_parce/enabled` | checkbox | 1 | 0, 1 |
-| `local_parce/chat_title` | text | "Questions & Answers" | Any string |
-| `local_parce/enable_guests` | checkbox | 0 | 0, 1 |
-
-### Renderer Class
-
-**`classes/output/renderer`**
-
-Extends: `plugin_renderer_base`
-
-Methods:
-- `render_from_template($template, $context)` - Render Mustache template
-
-## Styling Specifications
-
-### Layout Model
-
-```
-[Chat Bubble] (60x60px, fixed)
-    ├─ Icon (28px)
-    └─ Badge (28px)
-
-[Chat Window] (350x500px, fixed)
-    ├─ Header (60px, gradient)
-    │   ├─ Title (flex)
-    │   └─ Close Button (flex)
-    ├─ Messages (flex: 1, scrollable)
-    │   ├─ Welcome message
-    │   ├─ Message 1 (user)
-    │   ├─ Message 2 (bot)
-    │   └─ Loading (conditional)
-    └─ Footer (60px)
-        ├─ Input Textarea (40-100px)
-        └─ Send Button (40px)
-```
-
-### Color Scheme
-
-| Element | Color | Hex |
-|---------|-------|-----|
-| Primary | Blue | #007bff |
-| Primary Hover | Dark Blue | #0056b3 |
-| Alert | Red | #dc3545 |
-| Background | Light Gray | #f8f9fa |
-| Border | Gray | #e0e0e0 |
-| Text | Dark Gray | #333 |
-| Secondary Text | Medium Gray | #666 |
-
-### Responsive Breakpoints
-
-| Breakpoint | Width | Changes |
-|-----------|-------|---------|
-| Desktop | >480px | Full styling |
-| Mobile | ≤480px | Full height, adjusted width |
-
-### Accessibility
-
-- **WCAG 2.1 Level AA** compliant
-- **ARIA Labels**: All interactive elements
-- **Focus Management**: Visible focus states
-- **Keyboard Navigation**: Tab, Enter, Escape
-- **Reduced Motion**: Respects `prefers-reduced-motion`
-- **High Contrast**: Supports `prefers-contrast`
-- **Color Contrast**: Minimum 4.5:1 ratio
-
-## Data Flow
-
-### Message Send Flow
-
-```
-User Input
-    ↓
-chat.js (keypress event)
-    ↓
-chat-handler.sendMessage()
-    ↓
-chat-ui.addMessage() [User message]
-    ↓
-chat-ui.showLoading()
-    ↓
-AJAX submitQuestion()
-    ↓
-[Backend Phase 2]
-    ↓
-Response received
-    ↓
-chat-ui.hideLoading()
-    ↓
-chat-ui.addMessage() [Bot response]
-    ↓
-chat-ui.scrollToBottom()
-```
-
-## Performance Specifications
+### Active cache
 
-### Load Time
+`local_parce` defines the `conversation` cache in `MODE_SESSION`. Its internal key contains user, canonical chat context and a hash of the PHP session identifier. The session identifier is an isolation mechanism only and is never included in the persistent thread identifier.
 
-- **CSS**: Inline after init
-- **JS Modules**: AMD deferred loading
-- **Template Rendering**: On-demand
-- **Total Init Time**: <200ms target
+The cached value contains:
 
-### Runtime Performance
+- a cryptographically random 64-character hexadecimal `conversationkey`;
+- complete user/system entry pairs;
+- creation and last-access timestamps;
+- the durable global cache generation used for Privacy invalidation.
 
-- **No polling**: Event-driven only
-- **Message display**: <50ms DOM update
-- **Scroll animation**: 300ms smooth scroll
-- **Memory usage**: <5MB with 100 messages
+The cache is the only source for the visible active conversation and prior turns supplied to AI. There is no cache-to-database read-through and no TTL.
 
-### Network Behavior
+### Persistent storage
 
-- **No server requests** until user sends message
-- **AJAX request on send** (Phase 2)
-- **Response timeout**: 30 seconds
-- **No background sync**
+`local_parce_conversation_entries` stores successful complete turns for history and audit. `local_parce_ai_actions` stores provider-call traces and links them to the durable turn when one is produced. Neither table is used to reconstruct active state or prompts.
 
-## Security Specifications
+Each logical planning or answer call is opened before provider resolution and closed in a `finally` block. Attempts share a random request and call correlation ID; fallback attempts are separate ordered rows, while a call with no provider has ordinal zero. Closed traces expose stable outcomes and monotonic millisecond duration without being returned by web services.
 
-### Input Validation
+`chatid` is always a canonical course or system context ID. Course-module pages resolve to their containing course context. Pages outside a course resolve to the system context.
 
-- **Message escaping**: HTML entities escaped
-- **XSS prevention**: No innerHTML usage
-- **Input length**: TBD in Phase 2
-- **Rate limiting**: TBD in Phase 2
+## Conversation lifecycle and limits
 
-### Server Communication
+| Limit | Value |
+| --- | ---: |
+| Question length | 4,000 Unicode characters |
+| Active thread | configurable 1–40 complete turns; hard max 40 |
+| Active estimated tokens | configurable 1–16,000; hard max 16,000 |
+| Prompt history | 8 complete turns / 8,000 estimated tokens |
+| Retrieved Search/Calendar payload | 8,000 estimated tokens |
+| Entire provider payload | 18,000 estimated tokens |
+| Persistent history page | 100 complete turns maximum |
 
-- **CSRF Token**: Included in AJAX headers
-- **User authentication**: Check on each request
-- **Permission checks**: Server-side validation
-- **HTTPS**: Required in production
+Token estimation uses one token per three Unicode characters. A new active thread is created before the next question would reach a configured turn or token limit. The question that triggers rollover becomes the first turn of the new thread.
 
-### Data Privacy
+Invalid stored limit values are rejected with a coding exception instead of being silently clamped. Admin forms apply the same ranges.
 
-- **Chat history**: Not stored in Phase 1
-- **User data**: Only user ID transmitted
-- **Session handling**: Moodle session management
-- **Compliance**: GDPR compliant (no storage)
+## Provider payload and trust
 
-## Browser Support
-
-### Tested Browsers
-
-| Browser | Version | Status |
-|---------|---------|--------|
-| Chrome | 90+ | ✅ Supported |
-| Firefox | 88+ | ✅ Supported |
-| Safari | 14+ | ✅ Supported |
-| Edge | 90+ | ✅ Supported |
-| Mobile Chrome | 90+ | ✅ Supported |
-| Mobile Safari | 14+ | ✅ Supported |
-
-### Required Features
-
-- ES6 JavaScript support
-- Fetch/AJAX (jQuery)
-- CSS Grid/Flexbox
-- CSS Transitions
-- LocalStorage (optional Phase 2)
-
-## Installation & Upgrades
-
-### Installation Process
-
-1. Extract to `/local/parce/`
-2. Moodle detects plugin
-3. Admin confirms installation
-4. Database scripts run (if any)
-5. Settings created
-6. Plugin enabled
-
-### Version Management
-
-- Stored in: `version.php`
-- Format: `$plugin->version = YYYYMMDDHH00`
-- Example: 2026021000 (Feb 10, 2026, 10:00 UTC)
-
-### Upgrade Process
-
-1. Replace plugin files
-2. Moodle detects version change
-3. Upgrade scripts run (`db/upgrade.php`)
-4. Settings migrated
-5. Plugin continues to function
-
-## Testing Requirements
-
-### Unit Testing
-
-- [ ] Message escaping
-- [ ] Event handling
-- [ ] State management
-- [ ] DOM manipulation
-
-### Integration Testing
-
-- [ ] Module loading
-- [ ] Template rendering
-- [ ] Event coordination
-- [ ] Settings retrieval
-
-### Browser Testing
-
-- [ ] Desktop browsers
-- [ ] Mobile browsers
-- [ ] Keyboard navigation
-- [ ] Screen readers
-
-### Performance Testing
-
-- [ ] Load time
-- [ ] Memory usage
-- [ ] CSS animation smoothness
-- [ ] Scroll performance
-
-## Future API (Phase 2)
-
-### Web Service Endpoint
-
-**Service**: `local_parce_submit_question`
-
-**Method**: POST
-
-**Input**:
-```json
-{
-    "question": "string",
-    "context": {
-        "course_id": "int",
-        "page": "string"
-    }
-}
-```
-
-**Output**:
-```json
-{
-    "success": "boolean",
-    "answer": "string",
-    "timestamp": "int"
-}
-```
-
-## Deployment Checklist
-
-- [ ] Files copied to `/local/parce/`
-- [ ] File permissions set (755)
-- [ ] Moodle version compatibility verified
-- [ ] Cache purged
-- [ ] Plugin enabled
-- [ ] Admin settings configured
-- [ ] Chat bubble visible on page
-- [ ] Click opens window
-- [ ] Messages can be typed
-- [ ] Loading indicator works
-- [ ] Close button works
-- [ ] Mobile view tested
-- [ ] Accessibility verified
-
-## Documentation Versioning
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2026-02-10 | Initial UI implementation |
-| (2.0) | TBD | Backend services |
-| (3.0) | TBD | AI integration |
-| (4.0) | TBD | Advanced features |
-
----
-
-**Specification Version**: 1.0
-**Last Updated**: 2026-02-10
-**Component**: local_parce v1.0
-**Status**: Phase 1 (UI) Complete
+Parce treats retrieved Search, Calendar, Grades and Progress values as untrusted data. `controller::build_ai_payload()` places instructions, the question, previous turns and retrieved content between distinct text markers and enforces the total budget. These markers are text-level separation; they do not assert that BBCO or an effective provider supports or preserves a native `system` role.
+
+`ai_gateway` is the testable boundary around BBCO. BBCO discovers enabled and configured real provider instances, applies configured preference ordering and delegates a fresh cloned action to each eligible provider. Fallback is allowed only for recoverable 5xx responses. A 4xx response, including 429, and processor exceptions are terminal.
+
+Parce does not add another rate limiter. BBCO applies its own Moodle provider limit and the effective provider applies its limit when called.
+
+### Answer result contract
+
+`local_parce_answer` retains `answer`, `newconversation` and `usagepercentage` and also returns:
+
+- `status`: `success`, `error` or `rate_limited`;
+- `successful`: boolean operation outcome;
+- `retryable`: whether a later user-initiated retry may succeed;
+- `errorcode`: stable machine-readable code, omitted on success;
+- `retryafter`: seconds until retry, omitted unless Moodle or the provider supplied a value.
+
+No retry delay is inferred. A rate-limited planning call cannot proceed to answer generation, and BBCO treats 429 as terminal without provider fallback. Failed turns are not added to active conversation entries or future prompts. Technical provider details are appended to the safe localised message only under `DEBUG_DEVELOPER`.
+
+Moodle quotas are per provider call, user ID and configured Moodle rate-limit window. One question may consume a planning call and an answer call. They are not daily, per-question, per-IP, per-session or per-`conversationkey` quotas. All guests use Moodle's shared guest user ID and therefore share its quota, even though their active conversation caches are session-isolated.
+
+## Widget UX contract
+
+The floating trigger is a native button controlling a non-modal dialog. Open, closed, `hidden`, `aria-hidden` and `aria-expanded` state are updated together. Opening focuses the textarea; Escape, the close button and an outside click close the dialog and restore focus to its opener. There is no focus trap.
+
+The active session conversation is fetched completely once. The active endpoint has no pagination contract and persistent history is never requested by the widget. Initial entries are rendered while the accessible log is not live; only subsequently added user and system messages are announced.
+
+Conversation loading is serialised before sending. A failed load remains retryable and does not set `hasLoadedHistory`. A failed send retains one pending question node, replaces only its operation feedback during retry, and never adds the question twice. Rollover moves that existing node into the new visible conversation while announcements are disabled for the rearrangement.
+
+Server sanitisation is the HTML trust boundary. Live and restored system responses use the same renderer and no client-side security regex. User-authored text is inserted as text rather than HTML.
+
+Open state is not persisted: every page and browser tab starts closed, so no state can leak across tabs, logins or courses. The widget includes visible loading, empty, error and rate-limit states, focus-visible styling, mobile viewport sizing and reduced-motion behaviour.
+
+## Authorization
+
+`local_parce_answer` validates the page's requested context, resolves the canonical chat context and requires chat access in both. Non-guest access uses `local/parce:usechat`; guest access requires the explicit `enable_guests` setting.
+
+`local_parce_get_active_conversation` returns only the current session cache. `local_parce_get_conversation` returns persistent history:
+
+- authenticated users may read their own history without current enrolment;
+- guests are always denied persistent history;
+- another user's history requires `local/parce:viewallchats` in that chat context;
+- each authorised foreign-history read emits `conversation_history_viewed`.
+
+## Guest audit contract
+
+Guests share Moodle's guest user ID, so they are not represented as separate identities. Session-isolated cache keys and random `conversationkey` values keep their active threads separate. Successful guest turns and AI actions are persisted for audit and linked by `conversationkey`; guests cannot call the persistent-history endpoint.
+
+## Consistency and concurrency
+
+Conversation entry insertion and AI-action linking use one delegated database transaction. The complete turn is published to active cache only after durable persistence succeeds and the Privacy cache generation remains current.
+
+Parce AJAX services retain Moodle's writable session. Moodle's normal PHP session lock therefore serialises concurrent requests using the same cookie. Parce intentionally adds no second lock. This assumption must be verified by an HTTP concurrency probe whenever session handling or service declarations change.
+
+## Privacy and lifecycle
+
+The Privacy API declares both tables and the external BBCO disclosure. It supports context discovery, user export, deletion by context, approved user and user list. Deletion increments a durable cache generation so snapshots held by other PHP sessions become unreadable.
+
+No scheduled retention, purge, anonymisation or TTL exists. Until an institutional policy is approved, records remain until Privacy API deletion. History and AI traces are treated as personal/audit data independent from course content and are excluded from course backup/restore.
+
+## Deployment
+
+Deploy the matching pair in this order:
+
+1. BBCO `2026080600`.
+2. Parce `2026080601`, whose dependency requires that BBCO version.
+3. Configure a real provider behind BBCO.
+4. Install from the fresh schema, configure and purge caches.
+
+The `2026080601` Parce upgrade adds correlation, lifecycle, duration, outcome and effective-provider fields to
+`local_parce_ai_actions`; fresh installations receive the same schema from `install.xml`.
+
+Both plugins remain at `MATURITY_BETA` after phases 4 and 5B. Promotion requires production concurrency and load
+evidence, an approved trace-retention policy, and operational alerting based on the new outcome/latency metrics.
+
+## Verification contract
+
+- Full PHPUnit suites for BBCO and Parce.
+- Fresh-schema test using `check_database_schema()` and required indices.
+- HTTP concurrency probe with two overlapping requests and one cookie.
+- Moodle PHPCS for both plugin trees.
+- PHP syntax checks for modified PHP.
+- ESLint and AMD rebuild only when JavaScript source changes.
+- `git diff --check` in both repositories.
+
+Any skipped check must be reported explicitly; a prior successful run is not a substitute for a current run.

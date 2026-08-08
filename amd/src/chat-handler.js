@@ -14,143 +14,143 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Local Parce - Chat Handler Module
- *
- * Handles the logic for sending messages and processing responses.
- * Manages AJAX communication with backend services.
+ * Local Parce chat request handler.
  *
  * @module     local_parce/chat-handler
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['jquery', 'core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui', 'local_parce/markdown-renderer'],
-    function($, Log, Str, Ajax, ChatUI, MarkdownRenderer) {
+define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Log, Str, Ajax, ChatUI) {
     'use strict';
 
-    // Load strings.
-    var strings = [
+    const text = {
+        chat_error: 'chat_error',
+        chat_error_processing: 'chat_error_processing'
+    };
+
+    Str.getStrings([
         {key: 'chat_error', component: 'local_parce'},
-        {key: 'chat_error_processing', component: 'local_parce'},
-    ];
-    var s = [];
+        {key: 'chat_error_processing', component: 'local_parce'}
+    ]).then(function(strings) {
+        text.chat_error = strings[0];
+        text.chat_error_processing = strings[1];
+        return strings;
+    }).catch(function(error) {
+        Log.debug('Parce: error strings could not be loaded', error);
+    });
 
-    /**
-     * Load strings from server.
-     *
-     * @return {Promise} Promise that is resolved when the strings are loaded.
-     */
-    function loadStrings() {
-        strings.forEach(one => {
-            s[one.key] = one.key;
-        });
-
-        return new Promise((resolve) => {
-            Str.getStrings(strings).then(function(results) {
-                var pos = 0;
-                strings.forEach(one => {
-                    s[one.key] = results[pos];
-                    pos++;
-                });
-
-                resolve(true);
-                return true;
-            }).fail(function(e) {
-                Log.debug('Error loading strings');
-                Log.debug(e);
-                return false;
-            });
-        });
-    }
-
-    loadStrings().catch(() => null);
-    // End of Load strings.
-
-
-    var ChatHandler = {
+    const ChatHandler = {
         isSending: false,
+        pending: null,
 
-        /**
-         * Initialize the chat handler.
-         */
+        /** Initialise handler state. */
         init: function() {
-            // Initialize markdown renderer if needed
-            MarkdownRenderer.init();
+            this.isSending = false;
+            this.pending = null;
+            ChatUI.setSending(false);
         },
 
         /**
-         * Send a message to the backend service.
+         * Queue one message. Loading and sending are serialised to prevent races.
          *
-         * @param {string} message - The user's message
+         * @param {string} message User question
+         * @return {Promise|boolean} False if another turn is active
          */
         sendMessage: function(message) {
-            var self = this;
-
-            if (this.isSending || message.length === 0) {
-                return;
+            if (this.isSending || this.pending || message.length === 0) {
+                return false;
             }
-
-            // Add user message to the UI.
-            ChatUI.addMessage(message, 'user');
-
-            // Show loading indicator.
-            ChatUI.showLoading();
-
-            // Set flag to prevent multiple submissions.
-            this.isSending = true;
-
-            // Call the backend service.
-            this.submitQuestion(message).then(function(response) {
-                ChatUI.hideLoading();
-
-                if (response && response.answer) {
-                    // Check if response contains markdown and render it
-                    var answer = response.answer;
-                    if (MarkdownRenderer.isMarkdown(answer)) {
-                        answer = MarkdownRenderer.render(answer);
-                    }
-                    ChatUI.addMessage(answer, 'system');
-                } else {
-                    ChatUI.addMessage(s.chat_error_processing, 'system');
-                }
-                self.isSending = false;
-                return true;
-            }).catch(function(error) {
-                ChatUI.hideLoading();
-                ChatUI.addMessage(s.chat_error, 'system');
-                Log.debug('Chat error:', error);
-                self.isSending = false;
-            });
+            this.pending = {
+                message: message,
+                userNode: null
+            };
+            return this.processPending();
         },
 
         /**
-         * Submit a question to the backend web service.
+         * Continue the current turn after initial load or retry.
          *
-         * Sends the user's question to the local_parce_answer web service
-         * which processes it and returns an answer.
+         * @return {Promise}
+         */
+        processPending: function() {
+            const pending = this.pending;
+            if (!pending || this.isSending) {
+                return Promise.resolve(false);
+            }
+
+            this.isSending = true;
+            ChatUI.setSending(true);
+            ChatUI.removeOperationFeedback();
+
+            return ChatUI.ensureHistoryLoaded().then(() => {
+                if (!pending.userNode) {
+                    pending.userNode = ChatUI.addMessage(pending.message, 'user');
+                }
+                ChatUI.clearStatus();
+                ChatUI.showLoading();
+                return this.submitQuestion(pending.message);
+            }).then((response) => {
+                ChatUI.hideLoading();
+                ChatUI.updateUsage(response.usagepercentage);
+
+                if (response.successful) {
+                    if (response.newconversation) {
+                        ChatUI.startNewConversation(pending.userNode);
+                    }
+                    ChatUI.addMessage(response.answer || text.chat_error_processing, 'system');
+                    this.pending = null;
+                    return true;
+                }
+
+                ChatUI.showOperationError(
+                    response.answer || text.chat_error_processing,
+                    response.status,
+                    response.retryable,
+                    () => this.retryPending()
+                );
+                if (!response.retryable) {
+                    this.pending = null;
+                }
+                return false;
+            }).catch((error) => {
+                ChatUI.hideLoading();
+                if (pending.userNode) {
+                    ChatUI.showOperationError(text.chat_error, 'error', true, () => this.retryPending());
+                } else {
+                    ChatUI.showStatus('error', ChatUI.getText('historyerror'), () => this.retryPending());
+                }
+                Log.debug('Parce: chat operation failed', error);
+                return false;
+            }).then((result) => {
+                this.isSending = false;
+                ChatUI.setSending(false);
+                return result;
+            });
+        },
+
+        /** Retry the retained operation without adding its question again. */
+        retryPending: function() {
+            if (!this.pending || this.isSending) {
+                return;
+            }
+            this.processPending();
+        },
+
+        /**
+         * Submit one backend operation.
          *
-         * @param {string} question - The question to submit
-         * @return {Promise} A promise that resolves with the answer
+         * @param {string} question User question
+         * @return {Promise}
          */
         submitQuestion: function(question) {
-            // Call the web service using Moodle's Ajax module.
             return Ajax.call([{
                 methodname: 'local_parce_answer',
                 args: {
                     question: question,
                     contextid: M.cfg.contextid || 1
                 }
-            }])[0].then(function(response) {
-                // Success: return the response with the answer.
-                return {
-                    question: question,
-                    answer: response.answer
-                };
-            }).catch(function(error) {
-                // Error handling.
-                Log.debug('Web service error:', error);
-                throw error;
-            });
+            }])[0];
         }
     };
 

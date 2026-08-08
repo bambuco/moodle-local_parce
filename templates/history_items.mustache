@@ -1,0 +1,38 @@
+{{!
+    @template local_parce/history_items
+
+    Dynamic context, conversation and turn fragments for the history browser.
+}}
+{{#contexts}}
+<section class="local-parce-history-context border-bottom" data-chatid="{{chatid}}">
+    <button type="button" class="btn btn-light w-100 text-start d-flex align-items-center rounded-0 px-3 py-2"
+            data-action="toggle-context" aria-expanded="{{#expanded}}true{{/expanded}}{{^expanded}}false{{/expanded}}">
+        <span class="flex-grow-1 fw-bold text-truncate">{{name}}</span>
+        <span class="local-parce-history-chevron ms-2" aria-hidden="true">⌄</span>
+    </button>
+    <div data-region="context-conversations"{{^expanded}} hidden{{/expanded}}>
+        <div data-region="context-status" class="small text-muted px-3 py-2"{{^status}} hidden{{/status}}>{{status}}</div>
+        <div data-region="conversation-list">
+            {{#conversations}}
+                {{> local_parce/history_items_conversation}}
+            {{/conversations}}
+        </div>
+        <div data-region="context-limit" class="local-parce-history-limit small text-muted px-3 py-2" hidden></div>
+    </div>
+</section>
+{{/contexts}}
+{{#conversations}}
+    {{> local_parce/history_items_conversation}}
+{{/conversations}}
+{{#turns}}
+<article class="local-parce-history-turn">
+    <div class="local-parce-message local-parce-message-user">
+        <div class="local-parce-message-content">{{question}}</div>
+        <span class="local-parce-message-timestamp">{{time}}</span>
+    </div>
+    <div class="local-parce-message local-parce-message-system">
+        <div class="local-parce-message-content">{{{response}}}</div>
+        <span class="local-parce-message-timestamp">{{time}}</span>
+    </div>
+</article>
+{{/turns}}

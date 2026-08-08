@@ -1,0 +1,39 @@
+{{!
+    @template local_parce/history
+
+    Persistent two-column history browser shell.
+}}
+<main id="local-parce-history" class="local-parce-history" aria-labelledby="local-parce-history-heading">
+    <h2 id="local-parce-history-heading" class="visually-hidden">{{#str}}historytitle, local_parce{{/str}}</h2>
+    <div class="local-parce-history-layout d-flex flex-column flex-md-row h-100 mx-auto border rounded overflow-hidden bg-white">
+        <aside class="local-parce-history-sidebar d-flex flex-column" aria-label="{{#str}}historycontexts, local_parce{{/str}}">
+            <form data-region="search-form" class="local-parce-history-search d-flex p-3 border-bottom" role="search">
+                <label for="local-parce-history-query" class="visually-hidden">{{#str}}historysearch, local_parce{{/str}}</label>
+                <input id="local-parce-history-query" name="query" type="search" maxlength="255"
+                       class="form-control me-2" placeholder="{{#str}}historysearchplaceholder, local_parce{{/str}}">
+                <button type="submit" class="btn btn-primary flex-shrink-0" aria-label="{{#str}}search{{/str}}">
+                    {{#pix}}a/search, core, {{#str}}search{{/str}}{{/pix}}
+                </button>
+            </form>
+            <div data-region="navigation" class="local-parce-history-navigation flex-grow-1 overflow-auto">
+                <div data-region="list-status" class="p-3" role="status" aria-live="polite">
+                    {{#str}}historyloading, local_parce{{/str}}
+                </div>
+                <div data-region="contexts"></div>
+                <div data-region="list-limit" class="local-parce-history-limit small text-muted px-3 py-2" hidden></div>
+            </div>
+        </aside>
+        <section class="local-parce-history-detail d-flex flex-column flex-grow-1" aria-label="{{#str}}historyconversation, local_parce{{/str}}">
+            <header data-region="conversation-header" class="local-parce-history-header px-3 py-2 border-bottom" hidden>
+                <h3 data-region="conversation-title" class="h5 mb-0"></h3>
+            </header>
+            <div data-region="conversation" class="local-parce-history-conversation flex-grow-1 overflow-auto p-3">
+                <p data-region="conversation-placeholder" class="text-muted text-center mt-5">
+                    {{#str}}historyselectconversation, local_parce{{/str}}
+                </p>
+                <div data-region="conversation-status" class="text-center mt-5" role="status" aria-live="polite" hidden></div>
+                <div data-region="turns"></div>
+            </div>
+        </section>
+    </div>
+</main>

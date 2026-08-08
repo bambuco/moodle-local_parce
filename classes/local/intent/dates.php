@@ -17,7 +17,6 @@
 namespace local_parce\local\intent;
 
 use core_calendar\local\api as calendar_api;
-use core_calendar\local\event\container as calendar_container;
 
 /**
  * Class dates
@@ -82,8 +81,6 @@ class dates extends content {
 
         $now = time();
         $lookahead = 90 * DAYSECS;
-
-        calendar_container::set_requesting_user($this->user->id);
 
         $usersfilter = [$this->user->id];
         $groupsfilter = null;
@@ -167,22 +164,7 @@ class dates extends content {
             }
         }
 
-        // If keyword filtering returned no results, return all events (up to limit).
-        if (empty($found) && !empty($keywordslower)) {
-            foreach ($events as $event) {
-                $name = $event->get_name();
-                $description = $event->get_description() ? $event->get_description()->get_value() : '';
-
-                $resource = $this->format_event($event, $name, $description, $coursenames);
-                $found[] = $resource;
-
-                if (count($found) >= $resultlimit) {
-                    break;
-                }
-            }
-        }
-
-        return empty($found) ? '' : @json_encode($found);
+        return empty($found) ? '' : \local_parce\local\controller::encode_retrieved_items($found);
     }
 
     /**

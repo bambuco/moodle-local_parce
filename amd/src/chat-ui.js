@@ -14,10 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Local Parce - Chat UI Module
- *
- * Handles rendering, showing, and hiding the chat interface components.
- * Manages the visual state of the floating chat window.
+ * Local Parce chat UI.
  *
  * @module     local_parce/chat-ui
  * @copyright  2026 David Herney @ BambuCo
@@ -27,322 +24,374 @@
 define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
     'use strict';
 
-    var ChatUI = {
+    const WINDOW_STATE_STORAGE_KEY = 'local_parce_chat_window_open';
+
+    const ChatUI = {
         isWindowOpen: false,
         isLoadingHistory: false,
         hasLoadedHistory: false,
-        hasMoreHistory: true,
-        currentOffset: 0,
-        historyLimit: 10,
+        historyPromise: null,
         chatid: null,
+        opener: null,
 
         /**
-         * Initialize the chat UI.
-         * Creates and injects the chat window template if not already present.
-         * Restores the previous visible/hidden state from localStorage.
+         * Initialise the last persisted state for this page.
          *
-         * @param {number} chatid - The chat ID (typically course ID)
+         * @param {number} chatid Canonical chat context ID
          */
         init: function(chatid) {
             this.chatid = chatid;
+            this.syncWindowState(this.getPersistedWindowState());
+            if (this.isWindowOpen) {
+                this.ensureHistoryLoaded().catch(() => null);
+                this.focusInputField();
+            }
             Log.debug('Parce: Chat UI initialized');
-            this.setupScrollListener();
+        },
 
-            // Restore previous visibility state from localStorage.
-            var savedState = localStorage.getItem('local_parce_chat_open');
-            if (savedState === 'true') {
-                this.openWindow();
+        /**
+         * Read the last window state shared by tabs on this browser.
+         *
+         * @return {boolean}
+         */
+        getPersistedWindowState: function() {
+            try {
+                return window.localStorage.getItem(WINDOW_STATE_STORAGE_KEY) === 'true';
+            } catch (error) {
+                Log.debug('Parce: Chat window state could not be read', error);
+                return false;
             }
         },
 
         /**
-         * Toggle the chat window visibility.
+         * Persist the window state for subsequent page loads in any tab.
+         *
+         * @param {boolean} open Whether the widget is open
          */
-        toggleWindow: function() {
+        persistWindowState: function(open) {
+            try {
+                window.localStorage.setItem(WINDOW_STATE_STORAGE_KEY, open ? 'true' : 'false');
+            } catch (error) {
+                Log.debug('Parce: Chat window state could not be persisted', error);
+            }
+        },
+
+        /**
+         * Keep CSS, hidden and ARIA state in sync.
+         *
+         * @param {boolean} open Whether the widget is open
+         */
+        syncWindowState: function(open) {
+            const container = $('#local_parce-chat-window-container');
+            const toggle = $('#local_parce-chat-toggle');
+            this.isWindowOpen = open;
+            container.toggleClass('local_parce-visible', open);
+            container.prop('hidden', !open).attr('aria-hidden', open ? 'false' : 'true');
+            toggle.attr('aria-expanded', open ? 'true' : 'false');
+        },
+
+        /**
+         * Toggle window visibility.
+         *
+         * @param {HTMLElement} opener Element that opened the widget
+         */
+        toggleWindow: function(opener) {
             if (this.isWindowOpen) {
                 this.closeWindow();
             } else {
-                this.openWindow();
+                this.openWindow(opener);
             }
         },
 
         /**
-         * Open the chat window.
-         * Loads conversation history on first open and persists state to localStorage.
+         * Open, load the active conversation once, and focus the textarea.
+         *
+         * @param {HTMLElement} opener Element that opened the widget
          */
-        openWindow: function() {
-            var container = $('#local_parce-chat-window-container');
-            if (container.length > 0) {
-                container.addClass('local_parce-visible');
-                this.isWindowOpen = true;
-
-                // Persist visibility state to localStorage.
-                localStorage.setItem('local_parce_chat_open', 'true');
-
-                // Load conversation history on first open.
-                if (!this.hasLoadedHistory) {
-                    this.loadConversationHistory(0);
-                    this.hasLoadedHistory = true;
-                }
-
-                this.focusInputField();
+        openWindow: function(opener) {
+            if ($('#local_parce-chat-window-container').length === 0) {
+                return;
             }
+            this.opener = opener || this.opener || $('#local_parce-chat-toggle')[0];
+            this.syncWindowState(true);
+            this.persistWindowState(true);
+            this.ensureHistoryLoaded().catch(() => null);
+            this.focusInputField();
         },
 
         /**
-         * Close the chat window.
-         * Persists closed state to localStorage.
+         * Close and restore focus to the opener.
          */
         closeWindow: function() {
-            var container = $('#local_parce-chat-window-container');
-            if (container.length > 0) {
-                container.removeClass('local_parce-visible');
-                this.isWindowOpen = false;
-
-                // Persist visibility state to localStorage.
-                localStorage.setItem('local_parce_chat_open', 'false');
+            if (!this.isWindowOpen) {
+                return;
+            }
+            this.syncWindowState(false);
+            this.persistWindowState(false);
+            if (this.opener && document.contains(this.opener)) {
+                this.opener.focus();
             }
         },
 
-        /**
-         * Focus the message input field.
-         */
+        /** Focus the message textarea without creating a focus trap. */
         focusInputField: function() {
-            setTimeout(function() {
-                $('.local_parce-message-input').focus();
-            }, 100);
+            window.setTimeout(() => {
+                if (this.isWindowOpen) {
+                    $('.local_parce-message-input').trigger('focus');
+                }
+            }, 0);
         },
 
         /**
-         * Add a message to the chat window.
+         * Obtain a localised text embedded by the server template.
          *
-         * @param {string} message - The message text
-         * @param {string} type - The message type: 'user' or 'system'
+         * @param {string} key Text key
+         * @return {string}
          */
-        addMessage: function(message, type) {
-            var container = $('#local_parce-messages-container');
-            if (container.length === 0) {
-                return;
-            }
-
-            // Remove welcome message if present.
-            container.find('.local_parce-message-welcome').remove();
-
-            var now = new Date();
-            var timestamp = '<span class="local_parce-message-timestamp">' +
-                this.formatTime(now) + '</span>';
-            var messageClass = 'local_parce-message-' + (type || 'system');
-            var messageHtml = '<div class="local_parce-message ' + messageClass + '">' +
-                '<div class="local_parce-message-content">' +
-                (type == 'system' ? this.sanitizeBotMessage(message) : this.escapeHtml(message)) +
-                '</div>' +
-                timestamp +
-                '</div>';
-
-            container.append(messageHtml);
-
-            // Scroll to the bottom.
-            this.scrollToBottom();
+        getText: function(key) {
+            return $('.local_parce-status-texts [data-key="' + key + '"]').text();
         },
 
         /**
-         * Show loading indicator in the chat window.
+         * Display an accessible operation status and optional retry action.
+         *
+         * @param {string} type loading, empty, error, or rate_limited
+         * @param {string} message Visible status text
+         * @param {Function|null} retry Retry callback
          */
+        showStatus: function(type, message, retry) {
+            const status = $('#local_parce-chat-status');
+            status.empty().removeClass('hidden local_parce-status-loading local_parce-status-empty ' +
+                'local_parce-status-error local_parce-status-rate_limited');
+            status.addClass('local_parce-status-' + type);
+            $('<span class="local_parce-status-message"></span>').text(message).appendTo(status);
+            if (typeof retry === 'function') {
+                $('<button type="button" class="btn btn-sm btn-link local_parce-retry-btn"></button>')
+                    .text(this.getText('retry'))
+                    .one('click', retry)
+                    .appendTo(status);
+            }
+        },
+
+        /** Hide the current status. */
+        clearStatus: function() {
+            $('#local_parce-chat-status').addClass('hidden').empty();
+        },
+
+        /** Show loading and disable controls while an operation is active. */
         showLoading: function() {
+            this.showStatus('loading', this.getText('loading'), null);
+        },
+
+        /** Remove loading state. */
+        hideLoading: function() {
+            if ($('#local_parce-chat-status').hasClass('local_parce-status-loading')) {
+                this.clearStatus();
+            }
+        },
+
+        /**
+         * Enable or disable send controls.
+         *
+         * @param {boolean} sending Whether a send is active
+         */
+        setSending: function(sending) {
+            $('.local_parce-send-btn').prop('disabled', sending);
+            $('.local_parce-message-input').attr('aria-busy', sending ? 'true' : 'false');
+        },
+
+        /**
+         * Create the one renderer used by live and restored entries.
+         * System HTML has already crossed Moodle's server sanitisation boundary.
+         *
+         * @param {string} message Message content
+         * @param {string} type user or system
+         * @param {string} timestamp Display timestamp
+         * @param {string} extraClass Optional state class
+         * @return {jQuery}
+         */
+        createMessage: function(message, type, timestamp, extraClass) {
+            const item = $('<div></div>').addClass('local_parce-message local_parce-message-' + type);
+            if (extraClass) {
+                item.addClass(extraClass);
+            }
+            const content = $('<div class="local_parce-message-content"></div>');
+            if (type === 'user') {
+                content.text(message);
+            } else {
+                content.html(message);
+            }
+            item.append(content);
+            $('<span class="local_parce-message-timestamp"></span>').text(timestamp).appendTo(item);
+            return item;
+        },
+
+        /**
+         * Append one new message to the accessible log.
+         *
+         * @param {string} message Message content
+         * @param {string} type user or system
+         * @param {string} extraClass Optional state class
+         * @return {jQuery|null}
+         */
+        addMessage: function(message, type, extraClass) {
             const container = $('#local_parce-messages-container');
             if (container.length === 0) {
-                return;
+                return null;
             }
-
-            const loadingHtml = $($('.local_parce-message-loading').prop('outerHTML'));
-            loadingHtml.removeClass('hidden');
-            container.append(loadingHtml);
+            container.find('.local_parce-message-welcome').remove();
+            const item = this.createMessage(message, type || 'system', this.formatTime(new Date()), extraClass);
+            container.append(item);
             this.scrollToBottom();
+            return item;
         },
 
         /**
-         * Remove the loading indicator.
+         * Replace a failed operation message with a retryable status.
+         *
+         * @param {string} message Safe server-rendered error HTML
+         * @param {string} status Result discriminator
+         * @param {boolean} retryable Whether retry is allowed
+         * @param {Function} retry Retry callback
          */
-        hideLoading: function() {
-            $('#local_parce-messages-container .local_parce-message-loading').remove();
+        showOperationError: function(message, status, retryable, retry) {
+            this.removeOperationFeedback();
+            const state = status === 'rate_limited' ? 'rate_limited' : 'error';
+            const item = this.addMessage(message, 'system',
+                'local_parce-operation-feedback local_parce-message-' + state);
+            if (item && retryable) {
+                $('<button type="button" class="btn btn-sm btn-link local_parce-retry-btn"></button>')
+                    .text(this.getText('retry'))
+                    .one('click', retry)
+                    .appendTo(item.find('.local_parce-message-content'));
+            }
+        },
+
+        /** Remove feedback from the preceding failed attempt before retry. */
+        removeOperationFeedback: function() {
+            $('#local_parce-messages-container .local_parce-operation-feedback').remove();
         },
 
         /**
-         * Clear all messages from the chat window.
+         * Commit a rollover without adding or announcing the pending question twice.
+         *
+         * @param {jQuery} userMessage Existing user message node
          */
-        clearMessages: function() {
+        startNewConversation: function(userMessage) {
             const container = $('#local_parce-messages-container');
-            if (container.length > 0) {
-                const welcomeMessage = container.find('.local_parce-message-welcome').prop('outerHTML');
-                container.html(welcomeMessage.removeClass('hidden'));
+            const notice = $('#local_parce-chat-container > .local_parce-conversation-notice').first().clone();
+            const live = container.attr('aria-live');
+            container.attr('aria-live', 'off');
+            userMessage.detach();
+            container.empty();
+            notice.removeClass('hidden').appendTo(container);
+            userMessage.appendTo(container);
+            container.attr('aria-live', live || 'polite');
+        },
+
+        /**
+         * Load the complete active conversation exactly once.
+         *
+         * @return {Promise}
+         */
+        ensureHistoryLoaded: function() {
+            if (this.hasLoadedHistory) {
+                return Promise.resolve();
             }
-        },
-
-        /**
-         * Scroll the message container to the bottom.
-         */
-        scrollToBottom: function() {
-            var container = $('#local_parce-messages-container');
-            if (container.length > 0) {
-                setTimeout(function() {
-                    container.scrollTop(container[0].scrollHeight);
-                }, 100);
-            }
-        },
-
-        /**
-         * Escape HTML special characters.
-         *
-         * @param {string} text - The text to escape
-         * @return {string} Escaped text
-         */
-        escapeHtml: function(text) {
-            var map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
-            return text.replace(/[&<>"']/g, function(m) {
-                return map[m];
-            });
-        },
-
-        /**
-         * Sanitize bot messages to prevent XSS attacks
-         *
-         * Removes dangerous HTML tags and event handlers while preserving safe HTML
-         * markup (bold, italic, links, code blocks, etc.) from markdown rendering.
-         * This provides a second layer of protection after backend sanitization.
-         *
-         * @param {string} message - The message to sanitize
-         * @return {string} Sanitized message
-         */
-        sanitizeBotMessage: function(message) {
-            if (!message || typeof message !== 'string') {
-                return '';
-            }
-
-            var sanitized = message;
-
-            // Remove script tags and their content
-            sanitized = sanitized.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
-
-            // Remove event handlers (onclick, onerror, onload, onmouseover, etc.)
-            sanitized = sanitized.replace(/\s*on\w+\s*=\s*["']?[^\s"'>`]*["']?/gi, '');
-
-            // Remove iframe tags (potential security risk)
-            sanitized = sanitized.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '');
-
-            // Remove object and embed tags (potential security risk)
-            sanitized = sanitized.replace(/<(object|embed|applet)[^>]*>[\s\S]*?<\/(object|embed|applet)>/gi, '');
-
-            // Remove javascript: protocol from href and src attributes
-            sanitized = sanitized.replace(/javascript\s*:/gi, '');
-
-            // Remove style tags and their content
-            sanitized = sanitized.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-
-            return sanitized;
-        },
-
-        /**
-         * Load conversation history from cache via web service.
-         *
-         * @param {number} offset - Pagination offset for loading older messages
-         */
-        loadConversationHistory: function(offset) {
-            if (this.isLoadingHistory || !this.chatid) {
-                return;
+            if (this.historyPromise) {
+                return this.historyPromise;
             }
 
             this.isLoadingHistory = true;
-
-            Ajax.call([{
-                methodname: 'local_parce_get_conversation',
-                args: {
-                    chatid: this.chatid,
-                    offset: offset,
-                    limit: this.historyLimit
-                },
-                done: function(response) {
-                    ChatUI.renderHistoryEntries(response.entries);
-                    ChatUI.currentOffset = offset + response.entries.length;
-                    ChatUI.hasMoreHistory = response.hasmore;
-                    ChatUI.isLoadingHistory = false;
-
-                    if (offset === 0) {
-                        ChatUI.scrollToBottom();
-                    }
-                },
-                fail: function(error) {
-                    Log.error('Error loading chat history: ' + error);
-                    ChatUI.isLoadingHistory = false;
+            this.showLoading();
+            this.historyPromise = Ajax.call([{
+                methodname: 'local_parce_get_active_conversation',
+                args: {chatid: this.chatid}
+            }])[0].then((response) => {
+                this.renderHistoryEntries(response.entries);
+                this.updateUsage(response.usagepercentage);
+                this.hasLoadedHistory = true;
+                this.isLoadingHistory = false;
+                this.historyPromise = null;
+                if (response.entries.length === 0) {
+                    this.showStatus('empty', this.getText('empty'), null);
+                } else {
+                    this.clearStatus();
                 }
-            }]);
+                this.scrollToBottom();
+            }).catch((error) => {
+                this.isLoadingHistory = false;
+                this.historyPromise = null;
+                this.hasLoadedHistory = false;
+                this.showStatus('error', this.getText('historyerror'), () => this.ensureHistoryLoaded());
+                Log.debug('Parce: active conversation load failed', error);
+                throw error;
+            });
+            return this.historyPromise;
         },
 
         /**
-         * Render conversation history entries to the chat window.
+         * Replace the initial view without announcing restored entries.
          *
-         * @param {array} entries - Array of conversation entry objects
+         * @param {array} entries Chronological active conversation entries
          */
         renderHistoryEntries: function(entries) {
-            var container = $('#local_parce-messages-container');
-            if (container.length === 0) {
-                return;
+            const container = $('#local_parce-messages-container');
+            const live = container.attr('aria-live');
+            container.attr('aria-live', 'off').empty();
+            if (entries.length === 0) {
+                const welcome = $('#local_parce-chat-container > .local_parce-message-welcome').first().clone();
+                welcome.removeClass('hidden').appendTo(container);
+            } else {
+                entries.forEach((entry) => {
+                    container.append(this.createMessage(
+                        entry.content,
+                        entry.role,
+                        entry.timestamp_formatted,
+                        ''
+                    ));
+                });
             }
-
-            // Remove welcome message if present and there are history entries to show.
-            if (entries.length > 0) {
-                container.find('.local_parce-message-welcome').remove();
-            }
-
-            // Reverse entries to maintain chronological order when using prepend.
-            entries = entries.reverse();
-
-            entries.forEach(function(entry) {
-                var messageClass = 'local_parce-message-' + entry.role;
-                var timestamp = '<span class="local_parce-message-timestamp">' +
-                    entry.timestamp_formatted + '</span>';
-                var content = entry.role === 'user' ?
-                    ChatUI.escapeHtml(entry.content) :
-                    ChatUI.sanitizeBotMessage(entry.content);
-
-                var messageHtml = '<div class="local_parce-message ' + messageClass + '">' +
-                    '<div class="local_parce-message-content">' + content + '</div>' +
-                    timestamp +
-                    '</div>';
-
-                container.prepend(messageHtml);
-            });
+            container.attr('aria-live', live || 'polite');
         },
 
         /**
-         * Setup scroll listener to load older messages when scrolling to top.
-         * Detects when user scrolls near the top and loads more messages if available.
-         */
-        setupScrollListener: function() {
-            var self = this;
-            $('#local_parce-messages-container').on('scroll', function() {
-                // Detect when near top (scrollTop < 50 instead of === 0 for better UX).
-                if (this.scrollTop < 50 && !self.isLoadingHistory && self.hasMoreHistory) {
-                    self.loadConversationHistory(self.currentOffset);
-                }
-            });
-        },
-
-        /**
-         * Format a date object to HH:MM format.
+         * Update usage and retain the 70/85/100 bands.
          *
-         * @param {Date} date - The date to format
-         * @return {string} Formatted time string (HH:MM)
+         * @param {number} percentage Active conversation usage
+         */
+        updateUsage: function(percentage) {
+            percentage = Math.max(0, Math.min(100, Number(percentage) || 0));
+            const progress = $('.local_parce-usage-progress');
+            const bar = $('.local_parce-usage-bar');
+            progress.attr('aria-valuenow', percentage);
+            bar.css('width', percentage + '%').removeClass('bg-warning bg-danger');
+            if (percentage >= 85) {
+                bar.addClass('bg-danger');
+            } else if (percentage >= 70) {
+                bar.addClass('bg-warning');
+            }
+            $('.local_parce-usage-percentage').text(percentage + '%');
+        },
+
+        /** Scroll the log to its newest entry. */
+        scrollToBottom: function() {
+            const container = $('#local_parce-messages-container');
+            if (container.length > 0) {
+                window.setTimeout(function() {
+                    container.scrollTop(container[0].scrollHeight);
+                }, 0);
+            }
+        },
+
+        /**
+         * Format a date as HH:MM.
+         *
+         * @param {Date} date Date to format
+         * @return {string}
          */
         formatTime: function(date) {
-            var hours = String(date.getHours()).padStart(2, '0');
-            var minutes = String(date.getMinutes()).padStart(2, '0');
-            return hours + ':' + minutes;
+            return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
         }
     };
 
