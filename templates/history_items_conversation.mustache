@@ -1,0 +1,14 @@
+{{!
+    @template local_parce/history_items_conversation
+
+    Minimal conversation button used by regular and search results.
+}}
+<button type="button" class="local-parce-history-conversation-item btn btn-link w-100 text-start px-3 py-2 border-top rounded-0"
+        data-action="select-conversation" data-chatid="{{chatid}}" data-userid="{{userid}}"
+        data-conversationkey="{{conversationkey}}" data-title="{{title}}">
+    <span class="d-block text-body fw-bold">{{title}}</span>
+    {{#displayname}}<span class="d-block small text-muted">{{displayname}}</span>{{/displayname}}
+    <span class="d-block small text-muted">
+        {{turnslabel}}: {{turncount}} · {{promptlabel}}: {{prompttokens}} · {{completionlabel}}: {{completiontokens}}
+    </span>
+</button>

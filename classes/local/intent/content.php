@@ -59,7 +59,7 @@ class content extends base {
             $keywords = [$keywords];
         }
         $q = implode(' ', $keywords);
-        $content = self::get_search($q);
+        $content = self::get_search($q, $keywords);
 
         if (empty($content)) {
             $allowopenanswer = get_config('local_parce', 'allowopenanswer');
@@ -87,10 +87,11 @@ class content extends base {
      * Perform a search based on the provided keywords and resource types.
      *
      * @param string $search The search keywords.
+     * @param array $keywords Keywords used to confirm that each result is relevant.
      * @param array $resourcetype Optional array of resource types to filter the search.
      * @return string JSON encoded string of found resources or an error message if search is unavailable
      */
-    private function get_search(string $search, array $resourcetype = []): string {
+    protected function get_search(string $search, array $keywords, array $resourcetype = []): string {
         global $USER;
 
         if (empty($search) && empty($resourcetype)) {
@@ -123,7 +124,7 @@ class content extends base {
 
                 // A special case when all activities are requested.
                 if (
-                    $resourcetype == 'mod'
+                    in_array('mod', $resourcetype, true)
                     && strpos($componentname, 'mod_') === 0
                     && in_array($componentname, self::ACTIVITIES)
                 ) {
@@ -146,7 +147,7 @@ class content extends base {
         // ToDo: A horrible hack to replace the unimplemented "userids" parameter.
         // A temporary impersonation of the user is needed because the Search API does
         // not take into account the user being filtered with.
-        $tmpuser = clone($USER);
+        $tmpuser = $USER;
         try {
             $results = [];
             if ($this->user->id != $USER->id) {
@@ -160,20 +161,29 @@ class content extends base {
                 $USER->id = 0;
                 $results += $searchmanager->search($data);
             }
-        } catch (\Exception $e) {
-            // Restore the original user before throwing the exception.
+        } finally {
             $USER = $tmpuser;
-            throw $e;
         }
 
-        // Restore the original user.
-        $USER = $tmpuser;
-
-        $k = 0;
         $limit = 5;
         $coursenames = [];
+        $found = [];
+        $resultorder = 0;
         foreach ($results as $result) {
             $title = $result->get('title');
+
+            // Some search engines treat unquoted terms as alternatives. Keep sufficiently relevant candidates,
+            // then rank complete term matches before applying the result limit.
+            $searchabletext = $title . ' ' . $result->get('content');
+            foreach (['description1', 'description2'] as $field) {
+                if ($result->is_set($field)) {
+                    $searchabletext .= ' ' . $result->get($field);
+                }
+            }
+            $score = self::get_search_keyword_score($searchabletext, $keywords);
+            if ($score === 0) {
+                continue;
+            }
 
             $resource = new \stdClass();
             $resource->name = ($title !== '') ? $title : get_string('notitle', 'search');
@@ -191,13 +201,105 @@ class content extends base {
             $resource->coursename = $coursenames[$courseid];
             $resource->courseurl = (string)\course_get_url($courseid);
 
-            $found[] = $resource;
+            $found[] = [
+                'resource' => $resource,
+                'score' => $score,
+                'contentlength' => \core_text::strlen(trim((string) $resource->content)),
+                'order' => $resultorder++,
+            ];
+        }
 
-            if (++$k >= $limit) {
-                break;
+        if (empty($found)) {
+            return '';
+        }
+
+        usort($found, static function (array $first, array $second): int {
+            return ($second['score'] <=> $first['score'])
+                ?: ($second['contentlength'] <=> $first['contentlength'])
+                ?: ($first['order'] <=> $second['order']);
+        });
+        $found = array_map(static fn(array $candidate): \stdClass => $candidate['resource'], array_slice($found, 0, $limit));
+
+        return \local_parce\local\controller::encode_retrieved_items($found);
+    }
+
+    /**
+     * Score retrieved text by the number of planned terms it contains.
+     *
+     * @param string $text Retrieved title, content and descriptions.
+     * @param array $keywords Search phrases supplied by the planner.
+     * @return int Number of matching terms, or zero when the result is not sufficiently relevant.
+     */
+    private static function get_search_keyword_score(string $text, array $keywords): int {
+        $terms = [];
+        foreach ($keywords as $keyword) {
+            $keyword = \core_text::strtolower(\core_text::specialtoascii(trim((string) $keyword)));
+            foreach (preg_split('/[^\pL\pN]+/u', $keyword, -1, PREG_SPLIT_NO_EMPTY) as $term) {
+                $terms[$term] = true;
+            }
+        }
+        if (empty($terms)) {
+            return 1;
+        }
+
+        $text = \core_text::strtolower(\core_text::specialtoascii($text));
+        $matches = 0;
+        foreach (array_keys($terms) as $term) {
+            if (\core_text::strpos($text, $term) !== false) {
+                $matches++;
             }
         }
 
-        return empty($found) ? '' : @json_encode($found);
+        $required = count($terms) <= 2 ? count($terms) : (int) ceil(count($terms) / 2);
+        return $matches >= $required ? $matches : 0;
+    }
+
+    /**
+     * Format retrieved items as a deterministic Markdown list.
+     *
+     * @param string $contentjson JSON string containing retrieved items.
+     * @param string $headingidentifier Language string used before the list.
+     * @return string Markdown list, or an empty string when there are no valid items.
+     */
+    public static function format_search_results(string $contentjson, string $headingidentifier): string {
+        $items = @json_decode($contentjson, true);
+        if (empty($items) || !is_array($items)) {
+            return '';
+        }
+
+        $links = [];
+        foreach ($items as $item) {
+            if (empty($item['name']) || empty($item['url']) || isset($links[$item['url']])) {
+                continue;
+            }
+            $name = str_replace(['\\', '[', ']'], ['\\\\', '\\[', '\\]'], $item['name']);
+            $links[$item['url']] = '- [' . $name . '](' . $item['url'] . ')';
+        }
+        if (empty($links)) {
+            return '';
+        }
+
+        return get_string($headingidentifier, 'local_parce') . "\n\n" . implode("\n", $links);
+    }
+
+    /**
+     * Check whether retrieved items only provide names and links, without explanatory content.
+     *
+     * @param string $contentjson JSON string containing retrieved items.
+     * @return bool True when every item is linkable and has no content text.
+     */
+    public static function are_link_only_results(string $contentjson): bool {
+        $items = @json_decode($contentjson, true);
+        if (empty($items) || !is_array($items)) {
+            return false;
+        }
+
+        foreach ($items as $item) {
+            if (empty($item['name']) || empty($item['url']) || trim((string) ($item['content'] ?? '')) !== '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

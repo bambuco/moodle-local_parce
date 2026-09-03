@@ -16,10 +16,9 @@
 
 namespace local_parce\external;
 
-use core_analytics\site;
+use core_external\external_api;
 use core_external\external_function_parameters;
 use core_external\external_single_structure;
-use core_external\external_api;
 use core_external\external_value;
 use local_parce\local\controller;
 
@@ -53,7 +52,7 @@ class answer extends external_api {
      * @return array Array containing the answer
      */
     public static function execute(string $question, int $contextid = 1): array {
-        global $USER, $DB;
+        global $USER;
 
         // Parameter validation.
         ['question' => $question, 'contextid' => $contextid] = self::validate_parameters(
@@ -65,53 +64,71 @@ class answer extends external_api {
         $context = \context::instance_by_id($contextid);
         self::validate_context($context);
 
-        // Check if user has permission to use the chat.
-        require_capability('local/parce:usechat', $context);
+        controller::require_chat_access($context);
+        $chatcontext = controller::get_chat_context($context);
+        controller::require_chat_access($chatcontext);
 
-        // Process the question using the question handler.
-        $answer = \local_parce\local\question_handler::process($question, $context);
-
-        // Sanitize the answer to prevent XSS attacks
-        // Strip dangerous tags and event handlers while preserving safe HTML.
-        $answer = \core_text::entities_to_utf8($answer);
-        $answer = strip_tags($answer);
-        $answer = format_text($answer, FORMAT_HTML, [
-            'noclean' => false,
-            'para' => false,
-            'filter' => false,
-        ]);
-
-        if (trim($answer) == 'NOT_FOUND') {
-            $answer = get_string('answer_notfound', 'local_parce');
+        $question = trim($question);
+        if ($question === '') {
+            throw new \invalid_parameter_exception(get_string('error_empty_question', 'local_parce'));
+        }
+        if (\core_text::strlen($question) > controller::MAX_QUESTION_LENGTH) {
+            throw new \invalid_parameter_exception(get_string('error_question_too_long', 'local_parce'));
         }
 
-        $coursecontext = $context->get_course_context(false);
-        if ($coursecontext) {
-            $chatid = $coursecontext->id;
-        } else {
-            $chatid = SITEID;
-        }
+        $chatid = $chatcontext->id;
+        $snapshot = null;
+        $newconversation = controller::prepare_conversation($USER->id, $chatid, $question, $snapshot);
+        $preparationresolved = false;
+        $cacheversion = controller::get_active_cache_version();
 
-        // Only store in conversation history when a successful response was generated.
-        // Error/fallback messages pollute the context and bias the AI toward failure responses.
-        if (\local_parce\local\question_handler::was_last_successful()) {
-            $entryid = controller::store_conversation(
-                userid: $USER->id,
-                chatid: $chatid,
-                question: $question,
-                response: $answer
-            );
+        try {
+            // Process the question using the question handler.
+            $answer = \local_parce\local\question_handler::process($question, $context);
+            $result = \local_parce\local\question_handler::get_last_result();
 
-            // Link the AI action records to this conversation entry.
-            $actionids = \local_parce\local\question_handler::get_last_action_ids();
-            foreach ($actionids as $actionid) {
-                $DB->set_field('local_parce_ai_actions', 'conversationentryid', $entryid, ['id' => $actionid]);
+            if (trim($answer) === 'NOT_FOUND') {
+                $answer = get_string('answer_notfound', 'local_parce');
+            }
+
+            // Convert Markdown on the server and clean the resulting HTML.
+            $answer = format_text($answer, FORMAT_MARKDOWN, [
+                'noclean' => false,
+                'para' => false,
+                'filter' => false,
+            ]);
+
+            // Only store in conversation history when a successful response was generated.
+            // Error/fallback messages pollute the context and bias the AI toward failure responses.
+            if (
+                \local_parce\local\question_handler::was_last_successful()
+                && controller::is_active_cache_version($cacheversion)
+            ) {
+                controller::store_conversation(
+                    userid: $USER->id,
+                    chatid: $chatid,
+                    question: $question,
+                    response: $answer,
+                    actionids: \local_parce\local\question_handler::get_last_action_ids(),
+                    cacheversion: $cacheversion
+                );
+            } else {
+                controller::restore_prepared_conversation($snapshot);
+                $newconversation = false;
+            }
+            $preparationresolved = true;
+
+            $usage = controller::get_conversation_usage($USER->id, $chatid);
+            return [
+                'answer' => $answer,
+                'newconversation' => $newconversation,
+                'usagepercentage' => $usage['percentage'],
+            ] + $result;
+        } finally {
+            if (!$preparationresolved) {
+                controller::restore_prepared_conversation($snapshot);
             }
         }
-
-        return [
-            'answer' => $answer,
-        ];
     }
 
     /**
@@ -122,6 +139,13 @@ class answer extends external_api {
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'answer' => new external_value(PARAM_RAW, 'The answer to the user question'),
+            'newconversation' => new external_value(PARAM_BOOL, 'Whether this question started a new conversation'),
+            'usagepercentage' => new external_value(PARAM_INT, 'Percentage of the active conversation limit used'),
+            'status' => new external_value(PARAM_ALPHAEXT, 'Result discriminator: success, error or rate_limited'),
+            'successful' => new external_value(PARAM_BOOL, 'Whether the operation completed successfully'),
+            'retryable' => new external_value(PARAM_BOOL, 'Whether a later user-initiated retry may succeed'),
+            'errorcode' => new external_value(PARAM_ALPHANUMEXT, 'Stable machine-readable error code', VALUE_OPTIONAL),
+            'retryafter' => new external_value(PARAM_INT, 'Retry delay in seconds when known', VALUE_OPTIONAL),
         ]);
     }
 }

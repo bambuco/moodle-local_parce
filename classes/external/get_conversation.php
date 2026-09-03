@@ -21,6 +21,7 @@ use core_external\external_single_structure;
 use core_external\external_multiple_structure;
 use core_external\external_api;
 use core_external\external_value;
+use local_parce\local\controller;
 
 /**
  * Implementation of web service local_parce_get_conversation
@@ -39,7 +40,7 @@ class get_conversation extends external_api {
      */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
-            'chatid' => new external_value(PARAM_INT, 'Chat ID (typically course ID)'),
+            'chatid' => new external_value(PARAM_INT, 'Canonical chat context ID'),
             'userid' => new external_value(
                 PARAM_INT,
                 'User ID (optional, defaults to current user)',
@@ -54,7 +55,7 @@ class get_conversation extends external_api {
             ),
             'limit' => new external_value(
                 PARAM_INT,
-                'Number of entries to return per page (0 for all)',
+                'Number of complete turns to return per page',
                 VALUE_DEFAULT,
                 20
             ),
@@ -68,7 +69,7 @@ class get_conversation extends external_api {
      * By default returns the current user's conversation. To retrieve another user's
      * conversation history, the current user must have local/parce:viewallchats capability.
      *
-     * @param int $chatid The chat ID (typically course ID)
+     * @param int $chatid Canonical chat context ID
      * @param int $userid The user ID (0 = current user)
      * @param int $offset Pagination offset
      * @param int $limit Entries per page
@@ -99,21 +100,42 @@ class get_conversation extends external_api {
             ]
         );
 
-        // Validate context (system level for this operation).
+        // Validate the request at system level so users can access their own
+        // history after losing course enrolment.
         self::validate_context(\context_system::instance());
+
+        if ($offset < 0 || $limit < 1 || $limit > controller::MAX_HISTORY_LIMIT) {
+            throw new \invalid_parameter_exception('Invalid history pagination.');
+        }
+
+        $chatcontext = \context::instance_by_id($chatid);
+        if (!in_array($chatcontext->contextlevel, [CONTEXT_SYSTEM, CONTEXT_COURSE], true)) {
+            throw new \invalid_parameter_exception('The chat ID is not a valid chat context.');
+        }
+
+        if (isguestuser()) {
+            throw new \moodle_exception('error_guest_history', 'local_parce');
+        }
 
         // Determine target user ID.
         $targetuserid = ($userid > 0) ? $userid : $USER->id;
 
         // Permission validation: can only view own chat or have viewallchats capability.
         if ($targetuserid !== $USER->id) {
-            require_capability('local/parce:viewallchats', \context_system::instance());
+            require_capability('local/parce:viewallchats', $chatcontext);
+            $targetuser = \core_user::get_user($targetuserid, '*', MUST_EXIST);
+
+            $event = \local_parce\event\conversation_history_viewed::create([
+                'context' => $chatcontext,
+                'relateduserid' => $targetuser->id,
+            ]);
+            $event->trigger();
         }
 
         // Get paginated conversation entries.
-        $result = \local_parce\local\controller::get_conversation_entries_paginated(
+        $result = controller::get_history_entries_paginated(
             $targetuserid,
-            $chatid,
+            $chatcontext->id,
             $offset,
             $limit
         );
@@ -140,6 +162,7 @@ class get_conversation extends external_api {
                     'role' => new external_value(PARAM_ALPHA, 'Entry role: user or system'),
                     'content' => new external_value(PARAM_RAW, 'Message content'),
                     'timestamp' => new external_value(PARAM_INT, 'Unix timestamp'),
+                    'conversationkey' => new external_value(PARAM_ALPHANUM, 'Conversation session key'),
                     'timestamp_formatted' => new external_value(
                         PARAM_TEXT,
                         'Formatted timestamp for display (e.g., "14:30", "Yesterday 14:30", "15 Jan")'
@@ -147,7 +170,7 @@ class get_conversation extends external_api {
                 ]),
                 'Conversation entries with timestamps'
             ),
-            'total' => new external_value(PARAM_INT, 'Total entries in this conversation'),
+            'total' => new external_value(PARAM_INT, 'Total complete turns in this history'),
             'offset' => new external_value(PARAM_INT, 'Current pagination offset'),
             'limit' => new external_value(PARAM_INT, 'Limit used for this page'),
             'hasmore' => new external_value(PARAM_BOOL, 'Whether more entries exist beyond this page'),

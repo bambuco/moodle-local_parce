@@ -26,41 +26,81 @@
 }}
 
 <div id="local_parce-chat-container">
-    <div class="local_parce-chat-bubble" role="button" tabindex="0" aria-label="{{#str}}chat_bubble_label, local_parce{{/str}}">
-        <div class="local_parce-bubble-icon">
+    <button type="button"
+        id="local_parce-chat-toggle"
+        class="local_parce-chat-bubble"
+        aria-label="{{#str}}chat_bubble_label, local_parce{{/str}}"
+        aria-controls="local_parce-chat-window-container"
+        aria-expanded="false">
+        <span class="local_parce-bubble-icon">
             {{#pix}} chat, local_parce {{/pix}}
-        </div>
-    </div>
-    <div id="local_parce-chat-window-container" aria-hidden="true">
+        </span>
+    </button>
+    <div id="local_parce-chat-window-container"
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="local_parce-chat-title"
+        aria-hidden="true"
+        hidden>
         <div class="local_parce-chat-window">
             <div class="local_parce-chat-header">
-                <h4 class="local_parce-chat-title">{{chat_title}}</h4>
-                <button class="btn btn-sm btn-link local_parce-close-btn" aria-label="{{#str}} aria_close_chat, local_parce {{/str}}">
+                <h4 id="local_parce-chat-title" class="local_parce-chat-title">{{chat_title}}</h4>
+                <button type="button" class="btn btn-sm btn-link local_parce-close-btn"
+                    aria-label="{{#str}} aria_close_chat, local_parce {{/str}}">
                     {{#pix}} i/window_close {{/pix}}
                 </button>
             </div>
-            <div id="local_parce-messages-container" class="local_parce-chat-messages">
+            <div class="local_parce-usage-region">
+                <div class="local_parce-usage-summary">
+                    <span>{{#str}} conversation_usage, local_parce {{/str}}</span>
+                    <span class="local_parce-usage-percentage">0%</span>
+                </div>
+                <div class="progress local_parce-usage-progress"
+                    role="progressbar"
+                    aria-label="{{#str}} conversation_usage_aria, local_parce {{/str}}"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0">
+                    <div class="progress-bar local_parce-usage-bar" style="width: 0%"></div>
+                </div>
+            </div>
+            <div id="local_parce-messages-container"
+                class="local_parce-chat-messages"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions"
+                aria-atomic="false">
                 <div class="local_parce-message-welcome">
                     <p>
                         {{#str}} chat_welcome, local_parce {{/str}}
                     </p>
                 </div>
             </div>
+            <div id="local_parce-chat-status"
+                class="local_parce-chat-status hidden"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"></div>
             <div class="local_parce-chat-footer">
                 <textarea class="form-control local_parce-message-input"
                     placeholder="{{#str}} placeholder, local_parce {{/str}}"
                     aria-label="{{#str}} aria_message_input, local_parce {{/str}}"></textarea>
-                <button class="local_parce-send-btn btn btn-primary" aria-label="{{#str}} chat_send, local_parce {{/str}}" title="{{#str}} chat_send, local_parce {{/str}}">
+                <button type="button" class="local_parce-send-btn btn btn-primary"
+                    aria-label="{{#str}} chat_send, local_parce {{/str}}"
+                    title="{{#str}} chat_send, local_parce {{/str}}">
                     {{#pix}} i/sendmessage {{/pix}}
                 </button>
             </div>
         </div>
     </div>
-    <div class="local_parce-message local_parce-message-loading hidden" aria-label="{{#str}} aria_loading, local_parce {{/str}}">
-        <div class="local_parce-message-content" role="status" aria-live="polite">
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-            <span>{{#str}} chat_loading, local_parce {{/str}}</span>
-        </div>
-    </div>
     <div class="local_parce-message-welcome hidden"><p>{{#str}} chat_welcome, local_parce {{/str}}</p></div>
+    <div class="local_parce-conversation-notice hidden">
+        {{#str}} conversation_started, local_parce {{/str}}
+    </div>
+    <div class="local_parce-status-texts hidden" aria-hidden="true">
+        <span data-key="loading">{{#str}} chat_loading, local_parce {{/str}}</span>
+        <span data-key="historyerror">{{#str}} chat_history_error, local_parce {{/str}}</span>
+        <span data-key="empty">{{#str}} chat_empty, local_parce {{/str}}</span>
+        <span data-key="retry">{{#str}} chat_retry, local_parce {{/str}}</span>
+    </div>
 </div>

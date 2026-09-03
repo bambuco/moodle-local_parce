@@ -97,22 +97,51 @@ if ($hassiteconfig) {
         get_string('setting_cache_heading_desc', 'local_parce')
     ));
 
-    // Conversation cache time to live (TTL) in seconds.
-    $settings->add(new admin_setting_configtext(
-        'local_parce/cache_ttl',
-        get_string('setting_cache_ttl', 'local_parce'),
-        get_string('setting_cache_ttl_desc', 'local_parce'),
-        3600,
-        PARAM_INT
-    ));
-
     // Conversation cache maximum entries per conversation.
     $settings->add(new admin_setting_configtext(
         'local_parce/cache_maxentries',
         get_string('setting_cache_maxentries', 'local_parce'),
         get_string('setting_cache_maxentries_desc', 'local_parce'),
+        40,
+        '/^(?:[1-9]|[1-3][0-9]|40)$/'
+    ));
+
+    // Estimated-token limit for an active conversation.
+    $settings->add(new admin_setting_configtext(
+        'local_parce/conversation_maxtokens',
+        get_string('setting_conversation_maxtokens', 'local_parce'),
+        get_string('setting_conversation_maxtokens_desc', 'local_parce'),
+        16000,
+        '/^(?:[1-9][0-9]{0,3}|1[0-5][0-9]{3}|16000)$/'
+    ));
+
+    // Persistent history browser limits.
+    $settings->add(new admin_setting_heading(
+        'local_parce/history_heading',
+        get_string('setting_history_heading', 'local_parce'),
+        get_string('setting_history_heading_desc', 'local_parce')
+    ));
+    $historylimitvalidation = '/^(?:[1-9]|[1-9][0-9]|100)$/';
+    $settings->add(new admin_setting_configtext(
+        'local_parce/history_context_limit',
+        get_string('setting_history_context_limit', 'local_parce'),
+        get_string('setting_history_context_limit_desc', 'local_parce'),
+        20,
+        $historylimitvalidation
+    ));
+    $settings->add(new admin_setting_configtext(
+        'local_parce/history_conversation_limit',
+        get_string('setting_history_conversation_limit', 'local_parce'),
+        get_string('setting_history_conversation_limit_desc', 'local_parce'),
+        20,
+        $historylimitvalidation
+    ));
+    $settings->add(new admin_setting_configtext(
+        'local_parce/history_search_limit',
+        get_string('setting_history_search_limit', 'local_parce'),
+        get_string('setting_history_search_limit_desc', 'local_parce'),
         50,
-        PARAM_INT
+        $historylimitvalidation
     ));
 
     $ADMIN->add('localplugins', $settings);
