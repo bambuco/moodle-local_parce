@@ -1,11 +1,38 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\local;
 
-/** Database queries for the history browser. */
+/**
+ * Database queries for the history browser.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class history_repository {
-    /** List a user's chat contexts. */
+    /**
+     * List a user's chat contexts.
+     *
+     * @param int $userid The user ID.
+     * @param int $snapshot The snapshot ID.
+     * @param array|null $after The cursor for pagination.
+     * @param int $limit The maximum number of chat contexts to return.
+     * @return array The list of chat contexts.
+     */
     public static function contexts(int $userid, int $snapshot, ?array $after, int $limit): array {
         global $DB;
         $params = ['userid' => $userid, 'snapshot' => $snapshot];
@@ -23,7 +50,17 @@ final class history_repository {
         return array_values($DB->get_records_sql($sql, $params, 0, $limit + 1));
     }
 
-    /** List conversations in a context. */
+    /**
+     * List conversations in a context.
+     *
+     * @param int $chatid The chat ID.
+     * @param int|null $userid The user ID, or null for all users.
+     * @param int $snapshot The snapshot ID.
+     * @param array|null $after The cursor for pagination.
+     * @param int $limit The maximum number of conversations to return.
+     * @param string|null $conversationkey The conversation key, or null for all keys.
+     * @return array The list of conversations.
+     */
     public static function conversations(
         int $chatid,
         ?int $userid,
@@ -60,7 +97,15 @@ final class history_repository {
         return array_values($DB->get_records_sql($sql, $params, 0, $limit + 1));
     }
 
-    /** Find conversation groups containing a complete phrase in visible questions or responses. */
+    /**
+     * Find conversation groups containing a complete phrase in visible questions or responses.
+     *
+     * @param int|null $userid The user ID to filter by, or null for all users.
+     * @param int|null $chatid The chat ID to filter by, or null for all chats.
+     * @param string $phrase The phrase to search for.
+     * @param int $limit The maximum number of conversation groups to return.
+     * @return array The list of conversation groups matching the search criteria.
+     */
     public static function search(?int $userid, ?int $chatid, string $phrase, int $limit): array {
         global $DB;
         $like = '%' . $DB->sql_like_escape($phrase) . '%';
@@ -92,7 +137,14 @@ final class history_repository {
         return array_values($DB->get_records_sql($sql, $params, 0, $limit));
     }
 
-    /** Return token usage for only the conversation groups on the current page. */
+    /**
+     * Return token usage for only the conversation groups on the current page.
+     *
+     * @param int $chatid The chat ID.
+     * @param int $snapshot The snapshot ID.
+     * @param array $conversations The list of conversation groups on the current page.
+     * @return array The token usage for each conversation group.
+     */
     public static function conversation_usage(int $chatid, int $snapshot, array $conversations): array {
         global $DB;
         if (!$conversations) {
@@ -119,7 +171,17 @@ final class history_repository {
         return $usage;
     }
 
-    /** List chronological turns, always constrained by all three ownership keys. */
+    /**
+     * List chronological turns, always constrained by all three ownership keys.
+     *
+     * @param int $userid The user ID.
+     * @param int $chatid The chat ID.
+     * @param string $key The conversation key.
+     * @param int $snapshot The snapshot ID.
+     * @param array|null $after The cursor for pagination.
+     * @param int $limit The maximum number of turns to return.
+     * @return array The list of turns.
+     */
     public static function turns(int $userid, int $chatid, string $key, int $snapshot, ?array $after, int $limit): array {
         global $DB;
         $params = ['userid' => $userid, 'chatid' => $chatid, 'key' => $key, 'snapshot' => $snapshot];
@@ -136,7 +198,12 @@ final class history_repository {
         return array_values($DB->get_records_sql($sql, $params, 0, $limit + 1));
     }
 
-    /** Return token usage for a bounded page of entry IDs. */
+    /**
+     * Return token usage for a bounded page of entry IDs.
+     *
+     * @param array $turns The list of turns to calculate usage for.
+     * @return array The token usage for each turn.
+     */
     public static function turn_usage(array $turns): array {
         global $DB;
         if (!$turns) {

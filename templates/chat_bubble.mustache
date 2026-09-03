@@ -82,7 +82,10 @@
                 aria-live="polite"
                 aria-atomic="true"></div>
             <div class="local_parce-chat-footer">
-                <textarea class="form-control local_parce-message-input"
+                <label for="local_parce_message_input" class="sr-only">{{#str}} aria_message_input, local_parce {{/str}}</label>
+                <textarea id="local_parce_message_input"
+                    name="message_input"
+                    class="form-control local_parce-message-input"
                     placeholder="{{#str}} placeholder, local_parce {{/str}}"
                     aria-label="{{#str}} aria_message_input, local_parce {{/str}}"></textarea>
                 <button type="button" class="local_parce-send-btn btn btn-primary"

@@ -1,11 +1,36 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\external;
 
-/** Tests for the cursor-based history services. */
+/**
+ * Tests for the cursor-based history services.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class history_services_test extends \core_external\tests\externallib_testcase {
-    /** Cursor signatures and operation scopes cannot be reused. */
+    /**
+     * Cursor signatures and operation scopes cannot be reused.
+     *
+     * @covers \local_parce\external\list_history_conversations::execute
+     * @covers \local_parce\external\get_history_turns::execute
+     * @return void
+     */
     public function test_cursor_tamper_and_reuse_are_rejected(): void {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
@@ -28,7 +53,12 @@ final class history_services_test extends \core_external\tests\externallib_testc
         list_history_conversations::execute($context->id, 0, 'own', $page['cursor'] . 'x', 1);
     }
 
-    /** Snapshot pagination separates keys and cleans stored content. */
+    /**
+     * Snapshot pagination separates keys and cleans stored content.
+     *
+     * @covers \local_parce\external\get_history_turns::execute
+     * @return void
+     */
     public function test_snapshot_key_separation_and_xss_cleaning(): void {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
@@ -47,7 +77,12 @@ final class history_services_test extends \core_external\tests\externallib_testc
         $this->assertSame([], get_history_turns::execute($context->id, 'other')['turns']);
     }
 
-    /** Administrative pages require context capability and audit each exposed target once. */
+    /**
+     * Administrative pages require context capability and audit each exposed target once.
+     *
+     * @covers \local_parce\external\list_history_conversations::execute
+     * @return void
+     */
     public function test_admin_authorisation_and_event(): void {
         $this->resetAfterTest();
         $viewer = $this->getDataGenerator()->create_user();
@@ -73,7 +108,12 @@ final class history_services_test extends \core_external\tests\externallib_testc
         $this->assertSame('key', $sink->get_events()[0]->other['conversationkeys']);
     }
 
-    /** Guests cannot use any persistent-history operation. */
+    /**
+     * Guests cannot use any persistent-history operation.
+     *
+     * @covers \local_parce\external\list_history_contexts::execute
+     * @return void
+     */
     public function test_guest_cannot_list_history_contexts(): void {
         $this->resetAfterTest();
         $this->setGuestUser();
@@ -82,7 +122,13 @@ final class history_services_test extends \core_external\tests\externallib_testc
         list_history_contexts::execute();
     }
 
-    /** Missing contexts remain visible only to the owner with a safe label. */
+    /**
+     * Missing contexts remain visible only to the owner with a safe label.
+     *
+     * @covers \local_parce\external\list_history_contexts::execute
+     * @covers \local_parce\external\list_history_conversations::execute
+     * @return void
+     */
     public function test_deleted_context_is_safe_for_owner_and_not_authorised_for_admin(): void {
         $this->resetAfterTest();
         $owner = $this->getDataGenerator()->create_user();
@@ -104,7 +150,12 @@ final class history_services_test extends \core_external\tests\externallib_testc
         list_history_conversations::execute($chatid, 0, 'admin');
     }
 
-    /** Search matches one visible phrase and returns only minimal grouped metadata. */
+    /**
+     * Search matches one visible phrase and returns only minimal grouped metadata.
+     *
+     * @covers \local_parce\external\search_history::execute
+     * @return void
+     */
     public function test_search_history_uses_visible_content_and_configured_limit(): void {
         $this->resetAfterTest();
         $user = $this->getDataGenerator()->create_user();
@@ -126,7 +177,16 @@ final class history_services_test extends \core_external\tests\externallib_testc
         $this->assertSame(1, $result['resultlimit']);
     }
 
-    /** Insert a durable turn and return its id. */
+    /**
+     * Insert a durable turn and return its id.
+     *
+     * @param int $userid The ID of the user making the turn.
+     * @param int $chatid The ID of the chat context.
+     * @param string $key The conversation key.
+     * @param int $time The timestamp of the turn.
+     * @param string $response The response content.
+     * @return int The ID of the inserted turn.
+     */
     private function turn(int $userid, int $chatid, string $key, int $time, string $response = 'answer'): int {
         global $DB;
         return (int) $DB->insert_record('local_parce_conversation_entries', (object) [

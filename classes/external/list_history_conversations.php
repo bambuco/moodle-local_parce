@@ -1,5 +1,18 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\external;
 
@@ -12,9 +25,19 @@ use local_parce\local\history_cursor;
 use local_parce\local\history_repository;
 use local_parce\local\history_service;
 
-/** List conversations in a context. */
+/**
+ * List conversations in a context.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class list_history_conversations extends external_api {
-    /** Parameters. */
+    /**
+     * Get the parameters for executing the function to list history conversations.
+     *
+     * @return external_function_parameters The parameters for the function.
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'chatid' => new external_value(PARAM_INT, 'Context ID'),
@@ -26,12 +49,32 @@ final class list_history_conversations extends external_api {
         ]);
     }
 
-    /** Execute. */
-    public static function execute(int $chatid, int $userid = 0, string $mode = 'own',
-            string $cursor = '', int $limit = 0, string $conversationkey = ''): array {
+    /**
+     * Execute the function to list history conversations.
+     *
+     * @param int $chatid Context ID.
+     * @param int $userid Target user; zero means all users in admin mode.
+     * @param string $mode 'own' or 'admin'.
+     * @param string $cursor Opaque continuation cursor.
+     * @param int $limit Page size; zero uses the configured maximum.
+     * @param string $conversationkey Optional exact conversation key.
+     * @return array List of history conversations.
+     * @throws \invalid_parameter_exception If the parameters are invalid.
+     */
+    public static function execute(
+        int $chatid,
+        int $userid = 0,
+        string $mode = 'own',
+        string $cursor = '',
+        int $limit = 0,
+        string $conversationkey = ''
+    ): array {
         global $USER;
-        $params = self::validate_parameters(self::execute_parameters(),
-            compact('chatid', 'userid', 'mode', 'cursor', 'limit', 'conversationkey'));
+
+        $params = self::validate_parameters(
+            self::execute_parameters(),
+            compact('chatid', 'userid', 'mode', 'cursor', 'limit', 'conversationkey')
+        );
         history_service::require_access(max(1, $params['limit']));
         $limit = history_service::limit($params['limit'], 'history_conversation_limit');
         if (!in_array($params['mode'], ['own', 'admin'], true)) {
@@ -47,8 +90,14 @@ final class list_history_conversations extends external_api {
             'filters' => ['conversationkey' => $params['conversationkey']]];
         $state = $params['cursor'] === '' ? ['snapshot' => history_service::snapshot(), 'after' => null]
             : history_cursor::decode($params['cursor'], 'conversations', $scope);
-        $records = history_repository::conversations($params['chatid'], $target,
-            (int) $state['snapshot'], $state['after'], $limit, $params['conversationkey'] ?: null);
+        $records = history_repository::conversations(
+            $params['chatid'],
+            $target,
+            (int) $state['snapshot'],
+            $state['after'],
+            $limit,
+            $params['conversationkey'] ?: null
+        );
         $hasmore = count($records) > $limit;
         if ($hasmore) {
             array_pop($records);
@@ -85,7 +134,11 @@ final class list_history_conversations extends external_api {
             'limited' => count($items) >= $limit, 'resultlimit' => $limit];
     }
 
-    /** Returns. */
+    /**
+     * Returns the structure of the list history conversations service.
+     *
+     * @return external_single_structure
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'conversations' => new external_multiple_structure(new external_single_structure([

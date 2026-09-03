@@ -90,10 +90,16 @@ function xmldb_local_parce_upgrade($oldversion) {
     if ($oldversion < 2026080700) {
         $table = new xmldb_table('local_parce_conversation_entries');
         $indexes = [
-            new xmldb_index('userid_time_chat_id_idx', XMLDB_INDEX_NOTUNIQUE,
-                ['userid', 'timecreated', 'chatid', 'id']),
-            new xmldb_index('chat_user_key_time_id_idx', XMLDB_INDEX_NOTUNIQUE,
-                ['chatid', 'userid', 'conversationkey', 'timecreated', 'id']),
+            new xmldb_index(
+                'userid_time_chat_id_idx',
+                XMLDB_INDEX_NOTUNIQUE,
+                ['userid', 'timecreated', 'chatid', 'id']
+            ),
+            new xmldb_index(
+                'chat_user_key_time_id_idx',
+                XMLDB_INDEX_NOTUNIQUE,
+                ['chatid', 'userid', 'conversationkey', 'timecreated', 'id']
+            ),
         ];
         foreach ($indexes as $index) {
             if (!$dbman->index_exists($table, $index)) {
@@ -111,16 +117,6 @@ function xmldb_local_parce_upgrade($oldversion) {
             $dbman->drop_key($table, $key);
         }
         upgrade_plugin_savepoint(true, 2026080701, 'local', 'parce');
-    }
-
-    if ($oldversion < 2026080702) {
-        // Refresh external service definitions for the history search endpoint.
-        upgrade_plugin_savepoint(true, 2026080702, 'local', 'parce');
-    }
-
-    if ($oldversion < 2026080703) {
-        // Refresh history external return structures with configured-limit metadata.
-        upgrade_plugin_savepoint(true, 2026080703, 'local', 'parce');
     }
 
     return true;

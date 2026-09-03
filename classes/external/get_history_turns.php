@@ -1,5 +1,18 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\external;
 
@@ -12,9 +25,19 @@ use local_parce\local\history_cursor;
 use local_parce\local\history_repository;
 use local_parce\local\history_service;
 
-/** Return turns from exactly one conversation. */
+/**
+ * Return turns from exactly one conversation.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class get_history_turns extends external_api {
-    /** Parameters. */
+    /**
+     * Parameters for the service.
+     *
+     * @return external_function_parameters
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'chatid' => new external_value(PARAM_INT, 'Context ID'),
@@ -25,11 +48,29 @@ final class get_history_turns extends external_api {
         ]);
     }
 
-    /** Execute. */
-    public static function execute(int $chatid, string $conversationkey, int $userid = 0,
-            string $cursor = '', int $limit = 20): array {
+    /**
+     * Execute the service
+     *
+     * @param int $chatid
+     * @param string $conversationkey
+     * @param int $userid
+     * @param string $cursor
+     * @param int $limit
+     * @return array
+     */
+    public static function execute(
+        int $chatid,
+        string $conversationkey,
+        int $userid = 0,
+        string $cursor = '',
+        int $limit = 20
+    ): array {
         global $USER;
-        $params = self::validate_parameters(self::execute_parameters(), compact('chatid', 'conversationkey', 'userid', 'cursor', 'limit'));
+
+        $params = self::validate_parameters(
+            self::execute_parameters(),
+            compact('chatid', 'conversationkey', 'userid', 'cursor', 'limit')
+        );
         history_service::require_access($params['limit']);
         $target = $params['userid'] ?: (int) $USER->id;
         $foreign = $target !== (int) $USER->id;
@@ -40,8 +81,14 @@ final class get_history_turns extends external_api {
             'conversationkey' => $params['conversationkey'], 'filters' => []];
         $state = $params['cursor'] === '' ? ['snapshot' => history_service::snapshot(), 'after' => null]
             : history_cursor::decode($params['cursor'], 'turns', $scope);
-        $records = history_repository::turns($target, $params['chatid'], $params['conversationkey'],
-            (int) $state['snapshot'], $state['after'], $params['limit']);
+        $records = history_repository::turns(
+            $target,
+            $params['chatid'],
+            $params['conversationkey'],
+            (int) $state['snapshot'],
+            $state['after'],
+            $params['limit']
+        );
         $hasmore = count($records) > $params['limit'];
         if ($hasmore) {
             array_pop($records);
@@ -67,7 +114,11 @@ final class get_history_turns extends external_api {
         return ['turns' => $turns, 'cursor' => $next, 'hasmore' => $hasmore];
     }
 
-    /** Returns. */
+    /**
+     * Returns
+     *
+     * @return external_single_structure
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'turns' => new external_multiple_structure(new external_single_structure([

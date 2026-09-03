@@ -32,11 +32,11 @@ Feature: Browse persistent Parce conversation history
     Then I should see "Course 1"
     And I should see "Turns: 1"
     When I click on "Turns: 1" "button"
-    Then I should see "First question" in the "mark" element
+    Then I should see "First question" in the "mark" "css_element"
 
   Scenario: An administrator enters history from a course context
     Given I log in as "admin"
     When I am on "Course 1" course homepage
-    And I click on "Parce conversation history" "link"
+    And I navigate to "Parce conversation history" in current page administration
     Then I should see "Student One"
     And I should not see "First question"

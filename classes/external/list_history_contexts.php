@@ -1,5 +1,18 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\external;
 
@@ -12,9 +25,19 @@ use local_parce\local\history_cursor;
 use local_parce\local\history_repository;
 use local_parce\local\history_service;
 
-/** List contexts containing persistent history. */
+/**
+ * List contexts containing persistent history.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class list_history_contexts extends external_api {
-    /** Parameters. */
+    /**
+     * Parameters for the service.
+     *
+     * @return external_function_parameters
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'cursor' => new external_value(PARAM_RAW, 'Opaque continuation cursor', VALUE_DEFAULT, ''),
@@ -22,7 +45,13 @@ final class list_history_contexts extends external_api {
         ]);
     }
 
-    /** Execute. */
+    /**
+     * Execute the service.
+     *
+     * @param string $cursor
+     * @param int $limit
+     * @return array
+     */
     public static function execute(string $cursor = '', int $limit = 0): array {
         global $USER;
         $params = self::validate_parameters(self::execute_parameters(), compact('cursor', 'limit'));
@@ -48,14 +77,21 @@ final class list_history_contexts extends external_api {
         $next = '';
         if ($hasmore && $records) {
             $last = end($records);
-            $next = history_cursor::encode('contexts', $scope,
-                ['snapshot' => (int) $state['snapshot'], 'after' => [(int) $last->lastactivity, (int) $last->chatid]]);
+            $next = history_cursor::encode(
+                'contexts',
+                $scope,
+                ['snapshot' => (int) $state['snapshot'], 'after' => [(int) $last->lastactivity, (int) $last->chatid]]
+            );
         }
         return ['contexts' => $items, 'cursor' => $next, 'hasmore' => $hasmore,
             'limited' => count($items) >= $limit, 'resultlimit' => $limit];
     }
 
-    /** Returns. */
+    /**
+     * Returns the structure of the list of history contexts.
+     *
+     * @return external_single_structure
+     */
     public static function execute_returns(): external_single_structure {
         return new external_single_structure([
             'contexts' => new external_multiple_structure(new external_single_structure([

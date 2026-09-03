@@ -168,7 +168,11 @@ define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
             if (typeof retry === 'function') {
                 $('<button type="button" class="btn btn-sm btn-link local_parce-retry-btn"></button>')
                     .text(this.getText('retry'))
-                    .one('click', retry)
+                    .one('click', function(e) {
+                        // Stop bubbling so the removal below never resembles an outside click.
+                        e.stopPropagation();
+                        retry();
+                    })
                     .appendTo(status);
             }
         },
@@ -262,7 +266,11 @@ define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
             if (item && retryable) {
                 $('<button type="button" class="btn btn-sm btn-link local_parce-retry-btn"></button>')
                     .text(this.getText('retry'))
-                    .one('click', retry)
+                    .one('click', function(e) {
+                        // Stop bubbling so the removal below never resembles an outside click.
+                        e.stopPropagation();
+                        retry();
+                    })
                     .appendTo(item.find('.local_parce-message-content'));
             }
         },

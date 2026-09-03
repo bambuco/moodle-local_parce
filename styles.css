@@ -26,10 +26,11 @@
 /* Floating Chat Bubble */
 .local_parce-chat-bubble {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 48px;
-    height: 48px;
+    /* Offset clears theme_boost's fixed footer help/communication buttons in the same corner. */
+    bottom: 8rem;
+    right: 2rem;
+    width: 40px;
+    height: 40px;
     padding: 0;
     border: 2px solid transparent;
     background-color: var(--primary, #007bff);
@@ -191,7 +192,7 @@
 /* Chat Window */
 #local_parce-chat-window-container {
     position: fixed;
-    bottom: 90px;
+    bottom: calc(8rem + 70px);
     right: 20px;
     width: 350px;
     height: 500px;
@@ -502,14 +503,23 @@
     }
 }
 
+@media (min-width: 680px) {
+    #page.drawers.show-drawer-right {
+        #local_parce-chat-window-container,
+        .local_parce-chat-bubble {
+            right: calc(315px + 2rem);
+        }
+    }
+}
+
 /* Responsive design for mobile */
 @media (max-width: 480px) {
     #local_parce-chat-window-container {
         width: calc(100% - 20px);
-        height: calc(100dvh - 90px);
+        height: calc(100dvh - 8rem - 70px);
         max-width: calc(100vw - 20px);
         max-height: none;
-        bottom: 80px;
+        bottom: calc(8rem + 70px);
         right: 10px;
     }
 

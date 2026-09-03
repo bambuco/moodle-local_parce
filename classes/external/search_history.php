@@ -1,5 +1,18 @@
 <?php
 // This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 namespace local_parce\external;
 
@@ -11,9 +24,19 @@ use core_external\external_value;
 use local_parce\local\history_repository;
 use local_parce\local\history_service;
 
-/** Search visible persistent conversation content by complete phrase. */
+/**
+ * Search visible persistent conversation content by complete phrase.
+ *
+ * @package    local_parce
+ * @copyright  2026 David Herney @ BambuCo
+ * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
 final class search_history extends external_api {
-    /** Parameters. */
+    /**
+     * Parameters for the search history service.
+     *
+     * @return external_function_parameters
+     */
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'query' => new external_value(PARAM_TEXT, 'Complete phrase to find'),
@@ -23,7 +46,15 @@ final class search_history extends external_api {
         ]);
     }
 
-    /** Execute. */
+    /**
+     * Execute the search history service.
+     *
+     * @param string $query
+     * @param int $chatid
+     * @param int $userid
+     * @param string $mode
+     * @return array
+     */
     public static function execute(string $query, int $chatid = 0, int $userid = 0, string $mode = 'own'): array {
         global $USER;
         $params = self::validate_parameters(self::execute_parameters(), compact('query', 'chatid', 'userid', 'mode'));
@@ -74,7 +105,13 @@ final class search_history extends external_api {
         return ['contexts' => $contexts, 'limited' => count($records) >= $limit, 'resultlimit' => $limit];
     }
 
-    /** Format a minimal conversation search result. */
+    /**
+     * Format a minimal conversation search result.
+     *
+     * @param \stdClass $record The conversation record.
+     * @param \stdClass|null $usage The usage information for the conversation.
+     * @return array The formatted conversation data.
+     */
     private static function conversation(\stdClass $record, ?\stdClass $usage): array {
         $guestid = (int) guest_user()->id;
         $user = (int) $record->userid === $guestid ? null
@@ -91,7 +128,11 @@ final class search_history extends external_api {
         ];
     }
 
-    /** Returns. */
+    /**
+     * Returns the structure of the search history results.
+     *
+     * @return external_single_structure
+     */
     public static function execute_returns(): external_single_structure {
         $conversation = new external_single_structure([
             'userid' => new external_value(PARAM_INT, 'Conversation owner'),

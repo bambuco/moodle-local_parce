@@ -1,10 +1,75 @@
 {{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
     @template local_parce/history_items
 
     Dynamic context, conversation and turn fragments for the history browser.
+
+    Example context (json):
+    {
+        "contexts": [
+            {
+                "chatid": 1,
+                "name": "Context Name",
+                "expanded": true,
+                "status": "Active",
+                "conversations": [
+                    {
+                        "chatid": 1,
+                        "userid": 2,
+                        "conversationkey": "key",
+                        "title": "Conversation Title",
+                        "displayname": "User Display Name",
+                        "turnslabel": "Turns",
+                        "turncount": 3,
+                        "promptlabel": "Prompt Tokens",
+                        "prompttokens": 10,
+                        "completionlabel": "Completion Tokens",
+                        "completiontokens": 15
+                    }
+                ]
+            }
+        ],
+        "conversations": [
+            {
+                "chatid": 1,
+                "userid": 2,
+                "conversationkey": "key",
+                "title": "Conversation Title",
+                "displayname": "User Display Name",
+                "turnslabel": "Turns",
+                "turncount": 3,
+                "promptlabel": "Prompt Tokens",
+                "prompttokens": 10,
+                "completionlabel": "Completion Tokens",
+                "completiontokens": 15
+            }
+        ],
+        "turns": [
+            {
+                "question": "User question?",
+                "response": "System response.",
+                "time": "2024-06-01 12:00:00"
+            }
+        ]
+    }
 }}
 {{#contexts}}
-<section class="local-parce-history-context border-bottom" data-chatid="{{chatid}}">
+<div class="local-parce-history-context border-bottom" data-chatid="{{chatid}}">
     <button type="button" class="btn btn-light w-100 text-start d-flex align-items-center rounded-0 px-3 py-2"
             data-action="toggle-context" aria-expanded="{{#expanded}}true{{/expanded}}{{^expanded}}false{{/expanded}}">
         <span class="flex-grow-1 fw-bold text-truncate">{{name}}</span>
@@ -19,13 +84,13 @@
         </div>
         <div data-region="context-limit" class="local-parce-history-limit small text-muted px-3 py-2" hidden></div>
     </div>
-</section>
+</div>
 {{/contexts}}
 {{#conversations}}
     {{> local_parce/history_items_conversation}}
 {{/conversations}}
 {{#turns}}
-<article class="local-parce-history-turn">
+<div class="local-parce-history-turn">
     <div class="local-parce-message local-parce-message-user">
         <div class="local-parce-message-content">{{question}}</div>
         <span class="local-parce-message-timestamp">{{time}}</span>
@@ -34,5 +99,5 @@
         <div class="local-parce-message-content">{{{response}}}</div>
         <span class="local-parce-message-timestamp">{{time}}</span>
     </div>
-</article>
+</div>
 {{/turns}}

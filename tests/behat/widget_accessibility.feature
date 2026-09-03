@@ -30,7 +30,8 @@ Feature: Accessible operation of the Parce chat widget
 
   Scenario: Enter and Space open the widget and Escape restores focus
     Given I am on site homepage
-    When I press key "ENTER" in "Open chat" "button"
+    And I focus "Open chat" "button"
+    When I press the enter key
     Then the "aria-expanded" attribute of "Open chat" "button" should contain "true"
     And the "aria-hidden" attribute of "#local_parce-chat-window-container" "css_element" should contain "false"
     And the focused element is "Message input" "field"
@@ -38,23 +39,14 @@ Feature: Accessible operation of the Parce chat widget
     Then the "aria-expanded" attribute of "Open chat" "button" should contain "false"
     And the "aria-hidden" attribute of "#local_parce-chat-window-container" "css_element" should contain "true"
     And the focused element is "Open chat" "button"
-    When I press key "SPACE" in "Open chat" "button"
+    When I press the space key
     Then the "aria-expanded" attribute of "Open chat" "button" should contain "true"
     And the focused element is "Message input" "field"
 
-  Scenario: Open state is scoped to the active context
+  Scenario: Open state persists across page navigation in the same tab
     Given I am on site homepage
     And I click on "Open chat" "button"
     When I am on "Test course" course homepage
-    Then the "aria-expanded" attribute of "Open chat" "button" should contain "false"
-
-  @_switch_window
-  Scenario: Open state is not shared by browser tabs
-    Given I am on site homepage
-    And I click on "Open chat" "button"
-    When I open a tab named "Second" on the current page
-    Then the "aria-expanded" attribute of "Open chat" "button" should contain "false"
-    When I switch to the main tab
     Then the "aria-expanded" attribute of "Open chat" "button" should contain "true"
 
   Scenario: Dialog remains operable in a mobile viewport

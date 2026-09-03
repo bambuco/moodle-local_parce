@@ -25,6 +25,50 @@ use Behat\Gherkin\Node\TableNode;
  */
 class behat_local_parce extends behat_base {
     /**
+     * Sets focus on an element without dispatching a click, so keyboard-only
+     * interactions (Enter/Space via "I press the ... key") can be tested.
+     *
+     * @Given /^I focus "(?P<element_string>(?:[^"]|\\")*)" "(?P<selector_string>[^"]*)"$/
+     * @param string $element Element we look for
+     * @param string $selectortype The type of what we look for
+     */
+    public function i_focus_on($element, $selectortype): void {
+        if (!$this->running_javascript()) {
+            throw new \Behat\Mink\Exception\DriverException('Focusing an element requires JavaScript');
+        }
+        $this->get_selected_node($selectortype, $element)->focus();
+    }
+
+    /**
+     * Asserts an exact number of visible occurrences of a text on the current page.
+     *
+     * @Then /^I should see "(?P<text_string>(?:[^"]|\\")*)" exactly "(?P<count_number>\d+)" times$/
+     * @param string $text Text to search for
+     * @param int $count Expected amount of visible occurrences
+     */
+    public function i_should_see_exactly_n_times($text, $count): void {
+        $count = (int) $count;
+        $xpathliteral = behat_context_helper::escape($text);
+        $xpath = "//descendant-or-self::*[contains(., {$xpathliteral})]" .
+            "[count(descendant::*[contains(., {$xpathliteral})]) = 0]";
+
+        $nodes = $this->getSession()->getPage()->findAll('xpath', $xpath);
+        $visiblecount = 0;
+        foreach ($nodes as $node) {
+            if (!$this->running_javascript() || $node->isVisible()) {
+                $visiblecount++;
+            }
+        }
+
+        if ($visiblecount !== $count) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                sprintf('"%s" was found %d time(s) but %d were expected', $text, $visiblecount, $count),
+                $this->getSession()
+            );
+        }
+    }
+
+    /**
      * Persist complete turns for portal navigation scenarios.
      *
      * @Given /^the following Parce historical turns exist:$/
