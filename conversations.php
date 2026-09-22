@@ -15,21 +15,28 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for Parce
+ * Site report of Parce conversations by user and context.
  *
  * @package    local_parce
  * @copyright  2026 David Herney @ BambuCo
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+use core_reportbuilder\system_report_factory;
+use local_parce\reportbuilder\local\systemreports\conversations;
 
-$plugin->component    = 'local_parce';
-$plugin->release      = '1.2';
-$plugin->version      = 2026092200;
-$plugin->requires     = 2025100600;
-$plugin->supported    = [501, 501];
-$plugin->maturity     = MATURITY_BETA;
-$plugin->dependencies = [
-    'aiprovider_bbco' => 2026080800,
-];
+require(__DIR__ . '/../../config.php');
+require_once($CFG->libdir . '/adminlib.php');
+
+admin_externalpage_setup('local_parce_conversations', '', [], '', ['pagelayout' => 'report']);
+
+$context = context_system::instance();
+require_capability('local/parce:viewallchats', $context);
+
+echo $OUTPUT->header();
+echo $OUTPUT->heading(get_string('conversationsreport', 'local_parce'));
+
+$report = system_report_factory::create(conversations::class, $context);
+echo $report->output();
+
+echo $OUTPUT->footer();

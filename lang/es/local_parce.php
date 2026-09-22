@@ -40,6 +40,10 @@ $string['content_suggestions'] = 'No pude extraer una respuesta directa, pero en
 $string['conversation_started'] = 'Se inició una nueva conversación porque la anterior llegó a su límite.';
 $string['conversation_usage'] = 'Uso de la conversación';
 $string['conversation_usage_aria'] = 'Límite estimado de la conversación consumido';
+$string['conversationsreport'] = 'Conversaciones de Parce';
+$string['conversationsreportcontext'] = 'Contexto';
+$string['conversationsreporthistory'] = 'Ver historial de conversación';
+$string['conversationsreportturns'] = 'Preguntas y respuestas';
 $string['course_reference'] = 'Encontrado en [{$a->coursename}]({$a->courseurl})';
 $string['default_answer_question_prompt'] = 'Eres un sistema de respuesta basado exclusivamente en recuperación de información (Retrieval Constrained QA).
 
@@ -96,6 +100,7 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 
 Responde solo el JSON puro, sin bloques de código, Markdown ni texto adicional.';
 $string['defaulttitle'] = 'Parce - Asistente del sitio';
+$string['entityconversationentry'] = 'Entrada de conversación';
 $string['error_ai_failed'] = 'No se pudo generar una respuesta';
 $string['error_ai_unavailable'] = 'El servicio de IA no está disponible en este momento.';
 $string['error_empty_question'] = 'Por favor ingresa una pregunta.';

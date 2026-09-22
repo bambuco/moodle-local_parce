@@ -24,6 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$ADMIN->add('reports', new admin_externalpage(
+    'local_parce_conversations',
+    get_string('conversationsreport', 'local_parce'),
+    new moodle_url('/local/parce/conversations.php'),
+    'local/parce:viewallchats'
+));
+
 if ($hassiteconfig) {
     $settings = new admin_settingpage('local_parce', get_string('pluginname', 'local_parce'));
 

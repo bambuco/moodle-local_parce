@@ -40,6 +40,10 @@ $string['content_suggestions'] = 'I could not extract a direct answer, but I fou
 $string['conversation_started'] = 'A new conversation was started because the previous one reached its limit.';
 $string['conversation_usage'] = 'Conversation usage';
 $string['conversation_usage_aria'] = 'Estimated conversation limit used';
+$string['conversationsreport'] = 'Parce conversations';
+$string['conversationsreportcontext'] = 'Context';
+$string['conversationsreporthistory'] = 'View conversation history';
+$string['conversationsreportturns'] = 'Questions and answers';
 $string['course_reference'] = 'Found in [{$a->coursename}]({$a->courseurl})';
 $string['default_answer_question_prompt'] = 'You are a Retrieval Constrained QA response system.
 
@@ -95,6 +99,7 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 
 Respond only with pure JSON, without code blocks, Markdown, or additional text.';
 $string['defaulttitle'] = 'Assistant Parce';
+$string['entityconversationentry'] = 'Conversation entry';
 $string['error_ai_failed'] = 'Failed to generate a response';
 $string['error_ai_unavailable'] = 'AI service is not available at this moment.';
 $string['error_empty_question'] = 'Please enter a question.';
