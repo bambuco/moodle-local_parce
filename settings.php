@@ -70,7 +70,7 @@ if ($hassiteconfig) {
         'local_parce/question_plan_prompt',
         get_string('setting_question_plan_prompt', 'local_parce'),
         get_string('setting_question_plan_prompt_desc', 'local_parce'),
-        get_string('default_question_plan_prompt', 'local_parce')
+        ''
     ));
 
     // Answer question system instruction.
@@ -78,7 +78,7 @@ if ($hassiteconfig) {
         'local_parce/answer_question_prompt',
         get_string('setting_answer_question_prompt', 'local_parce'),
         get_string('setting_answer_question_prompt_desc', 'local_parce'),
-        get_string('default_answer_question_prompt', 'local_parce')
+        ''
     ));
 
     // Allow the answer to be openly sought in AI.

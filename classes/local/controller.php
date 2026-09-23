@@ -714,25 +714,86 @@ class controller
     }
 
     /**
+     * Build a compact course card for planning and answer payloads.
+     *
+     * The card contains only general course identity. Section names and resources
+     * are never included; those are retrieved only by the course intent.
+     *
+     * @param \core\context $context Current question context.
+     * @param int|null $userid User whose section visibility applies. Defaults to $USER.
+     * @return string JSON course card, or empty when none applies.
+     */
+    public static function build_course_card(\core\context $context, ?int $userid = null): string {
+        global $USER;
+
+        $userid = $userid ?? (int) $USER->id;
+        $coursecontext = $context->get_course_context(false);
+        if (empty($coursecontext) || $coursecontext->instanceid == SITEID) {
+            return json_encode(['contextlevel' => 'system'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        $course = get_course($coursecontext->instanceid);
+        $card = [
+            'contextlevel' => $context->contextlevel === CONTEXT_MODULE ? 'module' : 'course',
+            'fullname' => format_string($course->fullname, true, ['context' => $coursecontext]),
+            'shortname' => format_string($course->shortname, true, ['context' => $coursecontext]),
+            'sectioncount' => self::count_visible_sections($course, $userid),
+        ];
+
+        if ($context->contextlevel === CONTEXT_MODULE) {
+            $modinfo = get_fast_modinfo($course, $userid);
+            $cm = $modinfo->get_cm($context->instanceid);
+            $card['activityname'] = format_string($cm->name, true, ['context' => $cm->context]);
+            $card['activitytype'] = $cm->modname;
+        }
+
+        return json_encode($card, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Count course sections visible to a user.
+     *
+     * @param \stdClass $course Course record.
+     * @param int $userid User ID.
+     * @return int Visible section count, including section 0 when visible.
+     */
+    public static function count_visible_sections(\stdClass $course, int $userid): int {
+        $modinfo = get_fast_modinfo($course, $userid);
+        $count = 0;
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if (!empty($section->uservisible)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /**
      * Build a delimited user payload which never exceeds the total budget.
      *
      * The system instruction is transported separately. These markers separate
-     * user text, prior turns, resource metadata and untrusted retrieved content inside the user prompt.
+     * user text, prior turns, course identity, resource metadata and untrusted
+     * retrieved content inside the user prompt.
      *
      * @param string $question Current user question.
      * @param array $previous Previous conversation messages.
      * @param string $content Retrieved content for answer generation.
      * @param string $resourcetypes JSON object of module short names and grading capabilities for planning.
+     * @param string $course JSON course card with general identity only.
      * @return string Delimited payload within the configured token budget.
      */
     public static function build_ai_payload(
         string $question,
         array $previous = [],
         string $content = '',
-        string $resourcetypes = ''
+        string $resourcetypes = '',
+        string $course = ''
     ): string {
         do {
             $payload = '<QUESTION_START>' . $question . '<QUESTION_END>';
+            if ($course !== '') {
+                $payload .= '<COURSE_START>' . $course . '<COURSE_END>';
+            }
             if ($resourcetypes !== '') {
                 $payload .= '<RESOURCE_TYPES_START>' . $resourcetypes . '<RESOURCE_TYPES_END>';
             }

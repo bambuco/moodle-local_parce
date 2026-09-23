@@ -809,4 +809,328 @@ final class question_handler_test extends \advanced_testcase {
             (int) $DB->get_field('local_parce_ai_actions', 'conversationentryid', ['id' => $actionids[0]], MUST_EXIST)
         );
     }
+
+    /**
+     * Course overview answers from visible course identity without listing hidden modules.
+     */
+    public function test_course_overview_answers_from_visible_structure(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Introducción a Moodle',
+            'shortname' => 'MOODLE101',
+            'numsections' => 3,
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->getDataGenerator()->create_module('page', [
+            'course' => $course->id,
+            'name' => 'Lectura visible',
+            'section' => 1,
+        ]);
+        $this->getDataGenerator()->create_module('page', [
+            'course' => $course->id,
+            'name' => 'Lectura oculta',
+            'section' => 1,
+            'visible' => 0,
+        ]);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'El curso se llama Introducción a Moodle y tiene 4 secciones.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Cómo se llama el curso y cuántas secciones tiene?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('El curso se llama Introducción a Moodle y tiene 4 secciones.', $answer);
+        $this->assertSame(2, $gateway->get_generate_calls());
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertStringContainsString('Introducción a Moodle', $answertrace->prompttext);
+        $this->assertStringContainsString('"sectioncount":4', $answertrace->prompttext);
+        $this->assertStringNotContainsString('Lectura oculta', $answertrace->prompttext);
+        $this->assertStringNotContainsString('Lectura visible', $answertrace->prompttext);
+        $this->assertSame('course', $answertrace->intent);
+
+        $entryid = \local_parce\local\controller::store_conversation(
+            $student->id,
+            \context_course::instance($course->id)->id,
+            '¿Cómo se llama el curso y cuántas secciones tiene?',
+            $answer,
+            \local_parce\local\question_handler::get_last_action_ids()
+        );
+        $entry = $DB->get_record('local_parce_conversation_entries', ['id' => $entryid], '*', MUST_EXIST);
+        $this->assertSame($answer, $entry->response);
+        $this->assertStringNotContainsString('"kind":"course"', $entry->response);
+        $this->assertStringNotContainsString('<COURSE_START>', $entry->response);
+    }
+
+    /**
+     * Course resource scope returns only matching visible module types.
+     */
+    public function test_course_resources_filter_by_module_type(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Estructura visible', 'numsections' => 2]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $quiz = $this->getDataGenerator()->create_module('quiz', [
+            'course' => $course->id,
+            'name' => 'Quiz visible',
+            'section' => 1,
+        ]);
+        $this->getDataGenerator()->create_module('forum', [
+            'course' => $course->id,
+            'name' => 'Foro visible',
+            'section' => 1,
+        ]);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'resources', 'resourcetype' => ['quiz']],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'Solo hay un quiz visible.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Qué quizzes puedo ver?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('Solo hay un quiz visible.', $answer);
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertStringContainsString('Quiz visible', $answertrace->prompttext);
+        $this->assertStringContainsString('mod\/quiz\/view.php?id=' . $quiz->cmid, $answertrace->prompttext);
+        $this->assertStringNotContainsString('Foro visible', $answertrace->prompttext);
+    }
+
+    /**
+     * Hidden sections are excluded from the course card count and structure payload.
+     */
+    public function test_course_hidden_section_is_excluded(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso con sección oculta',
+            'numsections' => 2,
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $DB->set_field('course_sections', 'visible', 0, ['course' => $course->id, 'section' => 2]);
+        $DB->set_field('course_sections', 'name', 'Sección oculta', ['course' => $course->id, 'section' => 2]);
+        $DB->set_field('course_sections', 'name', 'Sección visible', ['course' => $course->id, 'section' => 1]);
+        rebuild_course_cache($course->id, true);
+        $this->setUser($student);
+
+        $card = json_decode(
+            \local_parce\local\controller::build_course_card(\context_course::instance($course->id), $student->id),
+            true
+        );
+        $this->assertSame(2, $card['sectioncount']);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'sections'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'Hay secciones visibles.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        \local_parce\local\question_handler::process(
+            '¿Qué secciones tiene el curso?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertStringContainsString('Sección visible', $answertrace->prompttext);
+        $this->assertStringNotContainsString('Sección oculta', $answertrace->prompttext);
+        $this->assertStringContainsString('"sectioncount":2', $answertrace->prompttext);
+    }
+
+    /**
+     * Site-level course overview lists enrolled courses without expanding modules.
+     */
+    public function test_course_overview_at_system_lists_enrolled_courses(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $courseone = $this->getDataGenerator()->create_course(['fullname' => 'Curso uno', 'numsections' => 1]);
+        $coursetwo = $this->getDataGenerator()->create_course(['fullname' => 'Curso dos', 'numsections' => 2]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $courseone->id, 'student');
+        $this->getDataGenerator()->enrol_user($student->id, $coursetwo->id, 'student');
+        $this->getDataGenerator()->create_module('page', [
+            'course' => $courseone->id,
+            'name' => 'Página interna',
+        ]);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'Estás matriculado en dos cursos.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿En qué cursos estoy?',
+            \context_system::instance(),
+            $gateway
+        );
+
+        $this->assertSame('Estás matriculado en dos cursos.', $answer);
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertStringContainsString('Curso uno', $answertrace->prompttext);
+        $this->assertStringContainsString('Curso dos', $answertrace->prompttext);
+        $this->assertStringNotContainsString('Página interna', $answertrace->prompttext);
+        $this->assertStringNotContainsString('"kind":"resource"', $answertrace->prompttext);
+        $this->assertStringContainsString(
+            '<COURSE_START>{"contextlevel":"system"}<COURSE_END>',
+            $gateway->get_prompt_texts()[0]
+        );
+    }
+
+    /**
+     * Course intent without a course or enrolment returns not-found without a second AI call.
+     */
+    public function test_course_intent_notfound_without_enrolment(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Cómo se llama el curso?',
+            \context_system::instance(),
+            $gateway
+        );
+
+        $this->assertSame(get_string('intent_course_notfound', 'local_parce'), $answer);
+        $this->assertSame(1, $gateway->get_generate_calls());
+        $this->assertFalse(\local_parce\local\question_handler::was_last_successful());
+    }
+
+    /**
+     * Non-course intents still receive the compact course card without structure details.
+     */
+    public function test_course_card_is_included_for_other_intents_without_structure(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso de contexto',
+            'shortname' => 'CTX101',
+            'numsections' => 2,
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->getDataGenerator()->create_module('page', [
+            'course' => $course->id,
+            'name' => 'Recurso del curso',
+            'section' => 1,
+        ]);
+        $DB->set_field('course_sections', 'name', 'Unidad especial', ['course' => $course->id, 'section' => 1]);
+        rebuild_course_cache($course->id, true);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'greeting',
+                'params' => ['Hello from the course'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            'Hola',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('Hello from the course', $answer);
+        $this->assertSame(1, $gateway->get_generate_calls());
+        $planprompt = $gateway->get_prompt_texts()[0];
+        $this->assertStringContainsString('<COURSE_START>', $planprompt);
+        $this->assertStringContainsString('Curso de contexto', $planprompt);
+        $this->assertStringContainsString('"sectioncount":3', $planprompt);
+        $this->assertStringNotContainsString('Unidad especial', $planprompt);
+        $this->assertStringNotContainsString('Recurso del curso', $planprompt);
+        $this->assertStringNotContainsString('"kind":"section"', $planprompt);
+        $this->assertStringNotContainsString('"kind":"resource"', $planprompt);
+    }
 }

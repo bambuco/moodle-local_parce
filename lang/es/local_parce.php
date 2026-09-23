@@ -50,6 +50,7 @@ $string['default_answer_question_prompt'] = 'Eres un sistema de respuesta basado
 Fuentes permitidas:
 1. El texto entre <CONTENT_START> y <CONTENT_END>
 2. El historial entre <PREVIOUS_START> y <PREVIOUS_END>
+3. La identidad del curso entre <COURSE_START> y <COURSE_END>
 
 Pregunta del usuario:
 La pregunta del usuario está entre las etiquetas <QUESTION_START> y <QUESTION_END>.
@@ -70,7 +71,7 @@ REGLAS OBLIGATORIAS:
 11. Si hay enlaces, coloca las referencias al final de la respuesta, referenciada con [#].
 
 Jerarquía:
-- Si hay conflicto, prioriza CONTENT sobre PREVIOUS.
+- Si hay conflicto, prioriza CONTENT sobre COURSE sobre PREVIOUS.
 - No inventes información faltante.
 
 Formato de salida:
@@ -81,8 +82,9 @@ $string['default_intent_response'] = 'Aún no estoy seguro de cómo ayudar con e
 $string['default_openanswer_prompt'] = 'Si no estás completamente seguro de la respuesta, di que no lo sabes. No proporciones respuestas ofensivas, racistas, violentas o ilegales. Además, no respondas preguntas sobre salud, salud mental o crimen.';
 $string['default_question_plan_prompt'] = 'Responde con JSON válido que contenga "type" y "params".
 
-"type" debe ser uno de: greeting, content, resource, dates, grades, progress, help.
-- "resource": solicitudes explícitas para buscar, mostrar, encontrar, ubicar o acceder a cursos, actividades o recursos de Moodle. Esta intención devuelve enlaces directamente y no responde preguntas sobre el contenido.
+"type" debe ser uno de: greeting, content, course, resource, dates, grades, progress, help.
+- "course": preguntas sobre la identidad o la estructura visible del curso actual: nombre, nombre corto, cuántas secciones tiene, nombres de secciones o qué recursos y actividades puede ver el usuario. Úsala para inventario o resumen, no para abrir un solo enlace.
+- "resource": solicitudes explícitas para buscar, mostrar, encontrar, ubicar o acceder a cursos, actividades o recursos de Moodle. Esta intención devuelve enlaces directamente y no responde preguntas sobre el contenido. No la uses para el nombre del curso, la cantidad de secciones, los nombres de secciones ni un inventario completo de recursos visibles.
 - "content": preguntas que requieren explicar o responder usando el contenido encontrado.
 - "dates": consultas sobre eventos o rangos de fechas.
 - "grades": preguntas sobre las calificaciones, puntajes o retroalimentación de evaluación del usuario actual. No lo uses para solicitar calificaciones de otro usuario.
@@ -91,6 +93,7 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 - "help": preguntas sobre cómo usar el sistema o qué se puede preguntar.
 
 "params":
+- Para "course", "scope" es obligatorio y debe ser uno de: overview, sections, resources. Usa "overview" para el nombre, el nombre corto o la cantidad de secciones. Usa "sections" para los nombres de sección. Usa "resources" para las actividades y recursos visibles a los que el usuario puede acceder. Opcionalmente usa "section" con un número o nombre de sección, "resourcetype" con ["*"] o nombres cortos de módulo, y "content" con términos distintivos del curso, la sección o la actividad tomados de la pregunta actual.
 - Para "resource", "resourcetype" es obligatorio. Los tipos de módulos usados en el curso aparecen como un objeto JSON entre RESOURCE_TYPES_START y RESOURCE_TYPES_END: cada clave es el nombre corto permitido y su booleano indica si el componente declara que puede generar calificaciones. Usa ["core_course"] para cursos, ["*"] para todos los tipos de módulos disponibles o un arreglo de claves concretas del objeto para los tipos solicitados. Usa "content" con solo los términos de la pregunta actual que distinguen el nombre del recurso dentro del contexto; usa un arreglo vacío si no existen. Usa el historial únicamente para resolver referencias explícitas de la pregunta actual.
 - Para "content", usa "content" con el tema y los términos que distinguen la respuesta solicitada, pero omite expresiones sintácticas genéricas. Conserva conceptos como ventajas, causas o definición. Por ejemplo, "cosas buenas de las redes sociales" debe buscar "ventajas redes sociales".
 - Para "dates", usa "dates" con los rangos o términos de fecha.
@@ -138,13 +141,14 @@ $string['historyunavailablecontext'] = '[Contexto no disponible]';
 $string['historyunavailableuser'] = 'Usuario no disponible';
 $string['intent_content_default'] = '¡Estoy aquí para ayudar! Por favor proporciona algunas palabras clave o temas de tu interés, y haré lo mejor posible para encontrar información relevante para ti.';
 $string['intent_content_notfound'] = 'Lo siento, no pude encontrar ningún contenido relacionado con tu solicitud. Por favor intenta con diferentes palabras clave o vuelve más tarde.';
+$string['intent_course_notfound'] = 'No encontré información visible del curso relacionada con tu pregunta.';
 $string['intent_dates_default'] = '¡Estoy aquí para ayudar! Por favor indica qué fechas o eventos te interesan y buscaré la información relevante.';
 $string['intent_dates_notfound'] = 'Lo siento, no pude encontrar eventos o fechas relacionados con tu consulta. Por favor intenta con otros términos o vuelve más tarde.';
 $string['intent_grades_notfound'] = 'No encontré calificaciones visibles relacionadas con tu pregunta.';
 $string['intent_greeting_default'] = '¡Hola! ¿Cómo puedo apoyarte hoy?';
-$string['intent_help_course'] = '¡Estás en un contexto de curso! Puedes hacerme preguntas relacionadas con el contenido del curso, las tareas o cualquier otro tema relacionado con el curso. Solo escribe tu pregunta y haré lo mejor posible para ayudarte.';
+$string['intent_help_course'] = '¡Estás en un contexto de curso! Puedes preguntarme el nombre del curso, cuántas secciones tiene, qué recursos visibles puedes ver, o hacer preguntas sobre el contenido, las tareas, las calificaciones, el progreso o las fechas. Solo escribe tu pregunta y haré lo mejor posible para ayudarte.';
 $string['intent_help_default'] = '¡Bienvenido a la sección de ayuda! Puedes hacerme preguntas sobre el contenido que estás viendo, y haré lo mejor posible para proporcionar información relevante. Solo escribe tu pregunta y estaré aquí para ayudarte.';
-$string['intent_help_module'] = '¡Actualmente estás en un contexto de módulo! Puedes hacerme preguntas relacionadas con el contenido específico del recurso, las fechas o cualquier otro tema relacionado con el módulo. Solo escribe tu pregunta y haré lo mejor posible para asistirte.';
+$string['intent_help_module'] = '¡Actualmente estás en un contexto de módulo! Puedes preguntarme el nombre del curso, cuántas secciones tiene, qué recursos visibles puedes ver, o hacer preguntas sobre el contenido de este módulo, las fechas, las calificaciones o el progreso. Solo escribe tu pregunta y haré lo mejor posible para asistirte.';
 $string['intent_progress_notfound'] = 'No encontré información visible de progreso relacionada con tu pregunta.';
 $string['intent_resource_notfound'] = 'Lo siento, no encontré recursos relacionados con tu búsqueda. Intenta usar el nombre o palabras distintivas del recurso.';
 $string['msg_no_content'] = 'Lo siento, no encontré información relevante para responder a tu pregunta. Intenta preguntar de otra manera o vuelve a consultar más tarde.';
@@ -158,11 +162,11 @@ $string['privacy:metadata:ai_actions:conversationentryid'] = 'El turno de conver
 $string['privacy:metadata:ai_actions:conversationkey'] = 'El identificador de la sesión de conversación.';
 $string['privacy:metadata:ai_actions:generatedcontent'] = 'El contenido sin procesar generado por el proveedor de IA.';
 $string['privacy:metadata:ai_actions:prompt'] = 'Las instrucciones del sistema enviadas al proveedor de IA.';
-$string['privacy:metadata:ai_actions:prompttext'] = 'La pregunta, conversación reciente y datos recuperados del curso, de calificaciones o de finalización enviados al proveedor de IA.';
+$string['privacy:metadata:ai_actions:prompttext'] = 'La pregunta, conversación reciente, ficha de identidad del curso y datos recuperados de estructura del curso, de calificaciones o de finalización enviados al proveedor de IA.';
 $string['privacy:metadata:ai_actions:technical'] = 'Información técnica de correlación, ciclo de vida, duración, respuesta, errores, modelo, proveedor y uso de tokens.';
 $string['privacy:metadata:ai_actions:timecreated'] = 'El momento en que se creó la solicitud de IA.';
 $string['privacy:metadata:ai_actions:userid'] = 'El usuario que realizó la solicitud.';
-$string['privacy:metadata:aiprovider'] = 'El proveedor de IA configurado recibe preguntas, el contexto reciente y datos relevantes del curso, de calificaciones visibles o de finalización para generar respuestas.';
+$string['privacy:metadata:aiprovider'] = 'El proveedor de IA configurado recibe preguntas, el contexto reciente, una ficha compacta de identidad del curso y, cuando hace falta, la estructura visible del curso, calificaciones visibles o datos de finalización para generar respuestas.';
 $string['privacy:metadata:conversation_entries'] = 'Turnos completados de las conversaciones del chat.';
 $string['privacy:metadata:conversation_entries:chatid'] = 'El contexto de Moodle en el que tuvo lugar la conversación.';
 $string['privacy:metadata:conversation_entries:conversationkey'] = 'El identificador de la sesión de conversación.';

@@ -54,7 +54,7 @@ Each logical planning or answer call is opened before provider resolution and cl
 | Active thread | configurable 1–40 complete turns; hard max 40 |
 | Active estimated tokens | configurable 1–16,000; hard max 16,000 |
 | Prompt history | 8 complete turns / 8,000 estimated tokens |
-| Retrieved Search/Calendar payload | 8,000 estimated tokens |
+| Retrieved Search/Calendar/Course payload | 8,000 estimated tokens |
 | Entire provider payload | 18,000 estimated tokens |
 | Persistent history page | 100 complete turns maximum |
 
@@ -64,7 +64,7 @@ Invalid stored limit values are rejected with a coding exception instead of bein
 
 ## Provider payload and trust
 
-Parce treats retrieved Search, Calendar, Grades and Progress values as untrusted data. `controller::build_ai_payload()` places the question, previous turns and retrieved content between distinct text markers and enforces the total budget. The request-specific instruction is transported separately. BBCO installs it as the effective provider's `generate_text` system instruction on a request-local provider copy, replacing the generic instruction without mutating provider configuration.
+Parce treats retrieved Search, Calendar, Grades, Progress and Course-structure values as untrusted data. `controller::build_ai_payload()` places the question, previous turns, the compact course card and retrieved content between distinct text markers and enforces the total budget. The request-specific instruction is transported separately. BBCO installs it as the effective provider's `generate_text` system instruction on a request-local provider copy, replacing the generic instruction without mutating provider configuration.
 
 `ai_gateway` is the testable boundary around BBCO. BBCO discovers enabled and configured real provider instances, applies configured preference ordering and delegates a fresh cloned action to each eligible provider. Fallback is allowed only for recoverable 5xx responses. A 4xx response, including 429, and processor exceptions are terminal.
 

@@ -136,9 +136,10 @@ class question_handler {
             if (empty($prompt)) {
                 $prompt = get_string('default_question_plan_prompt', 'local_parce');
             }
+            $coursecard = controller::build_course_card($context, $USER->id);
             $resourcetypes = intent\resource::get_module_type_catalogue($context);
             $resourcetypes = empty($resourcetypes) ? '' : json_encode($resourcetypes, JSON_UNESCAPED_SLASHES);
-            $hackquestion = controller::build_ai_payload($question, $previous, '', $resourcetypes);
+            $hackquestion = controller::build_ai_payload($question, $previous, '', $resourcetypes, $coursecard);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
@@ -172,7 +173,7 @@ class question_handler {
                     if (json_last_error() !== JSON_ERROR_NONE) {
                         return 'invalid_json';
                     }
-                    $valid = ['base', 'content', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
+                    $valid = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
                     return is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $valid, true)
                         ? 'success' : 'invalid_intent';
                 }
@@ -202,7 +203,7 @@ class question_handler {
             // Time 2: Get the response based on the intention.
             $type = @json_decode($generatedcontent, true);
 
-            $intentavailable = ['base', 'content', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
+            $intentavailable = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
             if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
                 return self::failure_response('error_processing_question', 'invalid_intent', true);
             }
@@ -231,6 +232,7 @@ class question_handler {
             } catch (\moodle_exception $e) {
                 $notfounderrors = [
                     'intent_content_notfound',
+                    'intent_course_notfound',
                     'intent_dates_notfound',
                     'intent_grades_notfound',
                     'intent_progress_notfound',
@@ -275,7 +277,7 @@ class question_handler {
             if (empty($answerprompt)) {
                 $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
             }
-            $hackquestion = controller::build_ai_payload($question, $previous, $content);
+            $hackquestion = controller::build_ai_payload($question, $previous, $content, '', $coursecard);
             $action = new question_plan(
                 contextid: $context->id,
                 userid: $USER->id,
@@ -340,7 +342,10 @@ class question_handler {
             }
 
             // Append course references if the content came from courses other than the current one.
-            $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
+            // Course-structure payloads already include their own links and must not be decorated.
+            if ($intentname !== 'course') {
+                $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
+            }
 
             return self::success_response($question, $generatedcontent);
         } catch (\core\exception\coding_exception $e) {

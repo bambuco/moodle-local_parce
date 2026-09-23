@@ -50,6 +50,7 @@ $string['default_answer_question_prompt'] = 'You are a Retrieval Constrained QA 
 Permitted Sources:
 1. The text between <CONTENT_START> and <CONTENT_END>
 2. The history between <PREVIOUS_START> and <PREVIOUS_END>
+3. The course identity between <COURSE_START> and <COURSE_END>
 
 User Question:
 The user question is between the <QUESTION_START> and <QUESTION_END> tags.
@@ -69,7 +70,7 @@ NOT_FOUND
 11. If there are links, place the references at the end of the response, referenced with [#].
 
 Hierarchy:
-- If there is a conflict, prioritize CONTENT over PREVIOUS.
+- If there is a conflict, prioritize CONTENT over COURSE over PREVIOUS.
 - Do not invent missing information.
 
 Output Formatting:
@@ -80,8 +81,9 @@ $string['default_intent_response'] = 'I\'m not sure how to help with that yet, b
 $string['default_openanswer_prompt'] = 'If you are not completely sure of the answer, say you don\'t know. Do not provide offensive, racist, violent, or illegal answers. Also, do not answer questions about health, mental health or crime.';
 $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "type" and "params".
 
-"type" must be one of: greeting, content, resource, dates, grades, progress, help.
-- "resource": explicit requests to search for, show, find, locate, or access Moodle courses, activities, or resources. This intent returns links directly and does not answer questions about their content.
+"type" must be one of: greeting, content, course, resource, dates, grades, progress, help.
+- "course": questions about the current course identity or visible structure: course name, short name, how many sections it has, section names, or which resources and activities the user can see. Use this for inventory or overview questions, not to open a single link.
+- "resource": explicit requests to search for, show, find, locate, or access Moodle courses, activities, or resources. This intent returns links directly and does not answer questions about their content. Do not use it for the course name, section count, section names, or a full inventory of visible resources.
 - "content": questions that require an explanation or answer based on retrieved content.
 - "dates": questions about events or date ranges.
 - "grades": questions about the current user\'s own grades, scores or grading feedback. Do not use it to request another user\'s grades.
@@ -90,6 +92,7 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 - "help": questions about using the system or what can be asked.
 
 "params":
+- For "course", "scope" is required and must be one of: overview, sections, resources. Use "overview" for the course name, short name or section count. Use "sections" for section names. Use "resources" for visible activities and resources the user can access. Optionally use "section" with a section number or name, "resourcetype" with ["*"] or module short names, and "content" with distinctive course, section or activity terms from the current question.
 - For "resource", "resourcetype" is required. Module types used in the course appear as a JSON object between RESOURCE_TYPES_START and RESOURCE_TYPES_END: each key is an allowed short name and its boolean indicates whether the component declares that it can produce grades. Use ["core_course"] for courses, ["*"] for all available module types, or an array of specific object keys for the requested types. Use "content" with only terms from the current question that distinguish the resource name within the context; use an empty array when there are none. Use history only to resolve explicit references in the current question.
 - For "content", use "content" with the subject and terms that distinguish the requested answer, while omitting generic syntactic wording. Preserve concepts such as advantages, causes, or definition. For example, "good things about social networks" should search for "advantages social networks".
 - For "dates", use "dates" with date ranges or terms.
@@ -137,13 +140,14 @@ $string['historyunavailablecontext'] = '[Unavailable context]';
 $string['historyunavailableuser'] = 'Unavailable user';
 $string['intent_content_default'] = 'I\'m here to help! Please provide some keywords or topics you\'re interested in, and I\'ll do my best to find relevant information for you.';
 $string['intent_content_notfound'] = 'Sorry, I couldn\'t find any content related to your request. Please try different keywords or check back later.';
+$string['intent_course_notfound'] = 'I couldn\'t find visible course information related to your question.';
 $string['intent_dates_default'] = 'I\'m here to help! Please let me know which dates or events you\'re interested in, and I\'ll look for the relevant information.';
 $string['intent_dates_notfound'] = 'Sorry, I couldn\'t find any events or dates related to your query. Please try different terms or check back later.';
 $string['intent_grades_notfound'] = 'I couldn\'t find any visible grades related to your question.';
 $string['intent_greeting_default'] = 'Hello! How can I assist you today?';
-$string['intent_help_course'] = 'You are in a course context. You can ask me questions related to the course content, assignments, or any other course-related topics. Just type your question and I\'ll do my best to help!';
+$string['intent_help_course'] = 'You are in a course context. You can ask me the course name, how many sections it has, which visible resources you can access, questions about course content, assignments, grades, progress or dates. Just type your question and I\'ll do my best to help!';
 $string['intent_help_default'] = 'Welcome to the help section! You can ask me questions about the content you are viewing, and I will do my best to provide relevant information. Just type your question and I\'ll be here to assist you!';
-$string['intent_help_module'] = 'You are currently in a module context. You can ask me questions related to the specific module content, dates, or any other module-related topics. Just type your question and I\'ll do my best to assist you!';
+$string['intent_help_module'] = 'You are currently in a module context. You can ask me the course name, how many sections it has, which visible resources you can access, or questions related to this module\'s content, dates, grades or progress. Just type your question and I\'ll do my best to assist you!';
 $string['intent_progress_notfound'] = 'I couldn\'t find any visible completion progress related to your question.';
 $string['intent_resource_notfound'] = 'Sorry, I could not find resources related to your search. Try using the resource name or other distinctive words.';
 $string['msg_no_content'] = 'Sorry, I couldn\'t find any relevant information to answer your question. Please try asking in a different way or check back later.';
@@ -157,11 +161,11 @@ $string['privacy:metadata:ai_actions:conversationentryid'] = 'The related conver
 $string['privacy:metadata:ai_actions:conversationkey'] = 'The conversation session identifier.';
 $string['privacy:metadata:ai_actions:generatedcontent'] = 'The raw content generated by the AI provider.';
 $string['privacy:metadata:ai_actions:prompt'] = 'The system instructions sent to the AI provider.';
-$string['privacy:metadata:ai_actions:prompttext'] = 'The question, recent conversation, and retrieved course, grade or completion data sent to the AI provider.';
+$string['privacy:metadata:ai_actions:prompttext'] = 'The question, recent conversation, course identity card, and retrieved course structure, grade or completion data sent to the AI provider.';
 $string['privacy:metadata:ai_actions:technical'] = 'Technical correlation, lifecycle, timing, response, error, model, provider, and token usage information.';
 $string['privacy:metadata:ai_actions:timecreated'] = 'When the AI request was created.';
 $string['privacy:metadata:ai_actions:userid'] = 'The user who made the request.';
-$string['privacy:metadata:aiprovider'] = 'The configured AI provider receives questions, recent conversation context, and relevant course, visible grade or completion data to generate responses.';
+$string['privacy:metadata:aiprovider'] = 'The configured AI provider receives questions, recent conversation context, a compact course identity card, and when needed visible course structure, grade or completion data to generate responses.';
 $string['privacy:metadata:conversation_entries'] = 'Completed chat conversation turns.';
 $string['privacy:metadata:conversation_entries:chatid'] = 'The Moodle context in which the conversation took place.';
 $string['privacy:metadata:conversation_entries:conversationkey'] = 'The conversation session identifier.';

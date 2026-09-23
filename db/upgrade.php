@@ -119,5 +119,19 @@ function xmldb_local_parce_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026080701, 'local', 'parce');
     }
 
+    if ($oldversion < 2026092201) {
+        $planprompt = get_config('local_parce', 'question_plan_prompt');
+        if (!empty($planprompt)) {
+            set_config('question_plan_prompt', '', 'local_parce');
+        }
+
+        $answerprompt = get_config('local_parce', 'answer_question_prompt');
+        if (!empty($answerprompt)) {
+            set_config('answer_question_prompt', '', 'local_parce');
+        }
+
+        upgrade_plugin_savepoint(true, 2026092201, 'local', 'parce');
+    }
+
     return true;
 }

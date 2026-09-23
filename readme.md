@@ -63,13 +63,14 @@ Except for the widget's exact static help command, Parce first asks the configur
 - `greeting`: returns the cordial greeting supplied by the planner, or the plugin's default greeting when none is supplied. It does not search Moodle or make a second AI call.
 - `help`: explains what can be asked. Its response is selected for the current system, course or activity-module context. The static help command reaches this intent without an AI planning call; an AI-classified help request stops after planning.
 - `resource`: handles explicit requests to find, show or access courses, activities and other Moodle resources. In course contexts the planner receives a compact catalogue of module short names used in that course, with a boolean indicating each component's `FEATURE_GRADE_HAS_GRADE` support. Its required `resourcetype` parameter accepts `core_course`, `*` for every catalogued module type, or selected short names such as `assign` and `lti`. Searches with distinctive terms use Moodle Search; requests without them list matching visible activities directly. It returns up to five links without asking AI to interpret their content.
+- `course`: answers questions about the current course identity or visible structure. Every planning and answer payload includes a compact course card with context level, full name, short name and visible section count, plus the current activity when the chat is opened from a module. The card never lists section names or resources. When the planner selects this intent, PHP recovers additional visible structure with `get_fast_modinfo()` for the requesting user: `overview` returns course identity and section count, `sections` adds visible section names, and `resources` adds visible linkable activities. Optional planner parameters can filter by section, module type or distinctive terms. At site level, `overview` lists the user's active enrolled courses without expanding modules; `sections` and `resources` expand only when the terms identify a single course. Retrieved structure is sent to a second AI call. Example: **“¿Cómo se llama el curso y cuántas secciones tiene?”**
 - `content`: answers explanatory questions from Moodle Search content. It searches with the planner's subject terms, rejects insufficiently relevant matches, ranks the remaining results and sends at most five to a second AI call. Link-only results are returned directly instead. When nothing is found, the configured open-answer policy either permits an answer without retrieved Moodle content or returns a not-found response.
 - `dates`: answers questions about upcoming calendar events and deadlines. It reads visible events from now through the next 90 days, filters their names and descriptions with the planner's terms and sends at most ten matches to a second AI call. It is not a general calendar browser and does not retrieve past events or events beyond that window.
 - `grades`: answers questions about the current user's own visible grades and grading feedback. In a course it reads that course's user grade report; at site level it checks the user's active enrolled courses. It respects Moodle grade-report capabilities, course `showgrades`, hidden items and activity availability, returns at most 50 matching items and makes a second AI call. It never uses an open answer when no grade data is available. Example: **“¿Qué calificación obtuve en el Quiz de seguridad?”**
 - `progress`: answers questions about the current user's own course and activity completion. It reports separate course-completion and visible-activity percentages, can filter incomplete, completed, passed or failed activities, checks the current course or active enrolled courses at site level and sends at most 50 records to a second AI call. Hidden, group-excluded and untracked activities are excluded. Example: **“¿Qué actividades tengo pendientes en este curso?”**
 - `base`: internal fallback that returns the generic unsupported-request response. It performs no retrieval and no second AI call. The runtime accepts it for compatibility, although the default planning prompt does not offer it as a classification choice.
 
-Search, calendar, grade and progress retrieval always use the target user and Moodle's access controls. In a normal course context, results are limited to that course. At site level, Search can span content the user may access across courses, while Calendar covers the user's enrolled courses plus the site course and Grades and Progress cover active enrolled courses. Calendar retrieval also applies user and group filters and Moodle's event-visibility callbacks. Consequently, intents do not grant access to content, events, grades or completion data that the user could not otherwise see.
+Search, calendar, course-structure, grade and progress retrieval always use the target user and Moodle's access controls. In a normal course context, results are limited to that course. At site level, Search can span content the user may access across courses, while Calendar covers the user's enrolled courses plus the site course and Grades, Progress and Course cover active enrolled courses. Calendar retrieval also applies user and group filters and Moodle's event-visibility callbacks. Consequently, intents do not grant access to content, events, grades, completion data or course structure that the user could not otherwise see.
 
 ## Security notes
 
@@ -79,18 +80,9 @@ Search, calendar, grade and progress retrieval always use the target user and Mo
 - Provider details are hidden unless Moodle uses `DEBUG_DEVELOPER`.
 - Parce adds neither a custom rate limiter nor a custom session lock; it relies on Moodle's AI limiter and normal writable-session request locking.
 
-## Development verification
+## In version
 
-Run from the Moodle root:
-
-```bash
-vendor/bin/phpunit --testsuite aiprovider_bbco_testsuite
-vendor/bin/phpunit --testsuite local_parce_testsuite
-phpcs --standard=moodle public/ai/provider/bbco
-phpcs --standard=moodle public/local/parce
-```
-
-See `docs/TECHNICAL-SPEC.md` for contracts and verification details.
+- 2026092201: Include 'course' intent
 
 ## License
 
