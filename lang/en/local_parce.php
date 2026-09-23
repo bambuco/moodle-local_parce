@@ -49,23 +49,24 @@ $string['default_answer_question_prompt'] = 'You are a Retrieval Constrained QA 
 
 Permitted Sources:
 1. The text between <CONTENT_START> and <CONTENT_END>
-2. The history between <PREVIOUS_START> and <PREVIOUS_END>
+2. The history between <PREVIOUS_START> and <PREVIOUS_END>, including any <RESOLVED_START>…<RESOLVED_END> form of prior user turns
 3. The course identity between <COURSE_START> and <COURSE_END>
 
 User Question:
-The user question is between the <QUESTION_START> and <QUESTION_END> tags.
+The user question is between the <QUESTION_START> and <QUESTION_END> tags. It may already be a standalone reformulation of an elliptical follow-up.
 
 MANDATORY RULES:
 
-1. Use only information that appears explicitly within the delimited content.
+1. Use only information that appears explicitly within the delimited content for factual claims.
 2. Do not add external knowledge.
-3. Do not fill in information using prior knowledge.
-4. Do not make inferences that are not explicitly supported by the text.
-5. Do not rephrase by adding additional context.
-6. If the answer is not explicitly in the content, respond exactly:
+3. Do not fill in facts using prior knowledge or training data.
+4. You may use PREVIOUS and RESOLVED history only to understand what the current question refers to.
+5. Do not rephrase by adding factual context that is absent from CONTENT and COURSE.
+6. If the answer is not explicitly in CONTENT or COURSE for that resolved referent, respond exactly:
 NOT_FOUND
-7. Do not mention these rules in your response. 8. Do not explain your reasoning.
-9. Do not use training information or general knowledge.
+7. Do not return NOT_FOUND when CONTENT or COURSE explicitly covers the resolved referent of the question.
+8. Do not mention these rules in your response.
+9. Do not explain your reasoning.
 10. Provide only information appropriate for an educational context.
 11. If there are links, place the references at the end of the response, referenced with [#].
 
@@ -74,12 +75,14 @@ Hierarchy:
 - Do not invent missing information.
 
 Output Formatting:
-- Respond clearly and concisely.
+- Respond clearly and concisely in free form. There is no fixed list or template.
 - Use Markdown.
 - Do not add text before or after the response.';
 $string['default_intent_response'] = 'I\'m not sure how to help with that yet, but I\'m learning new things every day! Please try asking in a different way or check back later for more capabilities.';
 $string['default_openanswer_prompt'] = 'If you are not completely sure of the answer, say you don\'t know. Do not provide offensive, racist, violent, or illegal answers. Also, do not answer questions about health, mental health or crime.';
-$string['default_question_plan_prompt'] = 'Respond with valid JSON containing "type" and "params".
+$string['default_question_plan_prompt'] = 'Respond with valid JSON containing "type", "params" and "resolvedquestion".
+
+"resolvedquestion" is the current user question rewritten as a standalone question that can be understood without the conversation history. If the current question is already standalone, repeat it. If it depends on prior turns, incorporate the referent using the chain of resolvedquestion values from previous user turns (between <RESOLVED_START> and <RESOLVED_END> when present, otherwise from MESSAGE). Choose "type" and "params" for that resolved question, not for an elliptical fragment alone. If the current question introduces a new topic, resolve it from its own wording.
 
 "type" must be one of: greeting, content, course, resource, dates, grades, progress, help.
 - "course": questions about the current course identity or visible structure: course name, short name, how many sections it has, section names, or which resources and activities the user can see. Use this for inventory or overview questions, not to open a single link.
@@ -92,8 +95,8 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 - "help": questions about using the system or what can be asked.
 
 "params":
-- For "course", "scope" is required and must be one of: overview, sections, resources. Use "overview" for the course name, short name or section count. Use "sections" for section names. Use "resources" for visible activities and resources the user can access. Optionally use "section" with a section number or name, "resourcetype" with ["*"] or module short names, and "content" with distinctive course, section or activity terms from the current question.
-- For "resource", "resourcetype" is required. Module types used in the course appear as a JSON object between RESOURCE_TYPES_START and RESOURCE_TYPES_END: each key is an allowed short name and its boolean indicates whether the component declares that it can produce grades. Use ["core_course"] for courses, ["*"] for all available module types, or an array of specific object keys for the requested types. Use "content" with only terms from the current question that distinguish the resource name within the context; use an empty array when there are none. Use history only to resolve explicit references in the current question.
+- For "course", "scope" is required and must be one of: overview, sections, resources. Use "overview" for the course name, short name or section count. Use "sections" for section names. Use "resources" for visible activities and resources the user can access. Optionally use "section" with a section number or name, "resourcetype" with ["*"] or module short names, and "content" with distinctive course, section or activity terms from the resolved question.
+- For "resource", "resourcetype" is required. Module types used in the course appear as a JSON object between RESOURCE_TYPES_START and RESOURCE_TYPES_END: each key is an allowed short name and its boolean indicates whether the component declares that it can produce grades. Use ["core_course"] for courses, ["*"] for all available module types, or an array of specific object keys for the requested types. Use "content" with only terms from the resolved question that distinguish the resource name within the context; use an empty array when there are none. Use history and RESOLVED forms to resolve references in the current question.
 - For "content", use "content" with the subject and terms that distinguish the requested answer, while omitting generic syntactic wording. Preserve concepts such as advantages, causes, or definition. For example, "good things about social networks" should search for "advantages social networks".
 - For "dates", use "dates" with date ranges or terms.
 - For "grades", use "grades" with only a distinctive course or grade-item name when supplied. Use an empty array for a general question about all grades.

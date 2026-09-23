@@ -1133,4 +1133,262 @@ final class question_handler_test extends \advanced_testcase {
         $this->assertStringNotContainsString('"kind":"section"', $planprompt);
         $this->assertStringNotContainsString('"kind":"resource"', $planprompt);
     }
+
+    /**
+     * Resolved questions accumulate across follow-up turns in the active prompt context.
+     */
+    public function test_resolved_question_chain_is_passed_to_later_plans(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Curso cadena', 'numsections' => 2]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+        $context = \context_course::instance($course->id);
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+
+        $plan1 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan1->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+                'resolvedquestion' => 'Cuántas secciones tiene este curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer1 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer1->set_response_data([
+            'generatedcontent' => 'El curso tiene 3 secciones.',
+            'model' => 'fake-model',
+        ]);
+        $gateway1 = new test_ai_gateway([$plan1, $answer1], $provider);
+        $response1 = \local_parce\local\question_handler::process(
+            'Cuántas secciones tiene este curso?',
+            $context,
+            $gateway1
+        );
+        \local_parce\local\controller::store_conversation(
+            $student->id,
+            $context->id,
+            'Cuántas secciones tiene este curso?',
+            $response1,
+            \local_parce\local\question_handler::get_last_action_ids(),
+            resolvedquestion: \local_parce\local\question_handler::get_last_resolved_question()
+        );
+
+        $plan2 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan2->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'sections'],
+                'resolvedquestion' => 'Cuáles son las secciones del curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer2 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer2->set_response_data([
+            'generatedcontent' => 'General, Nueva sección y Sección con fechas.',
+            'model' => 'fake-model',
+        ]);
+        $gateway2 = new test_ai_gateway([$plan2, $answer2], $provider);
+        $response2 = \local_parce\local\question_handler::process('Cuáles son?', $context, $gateway2);
+        $this->assertSame('General, Nueva sección y Sección con fechas.', $response2);
+        $this->assertStringContainsString(
+            '<RESOLVED_START>Cuántas secciones tiene este curso?<RESOLVED_END>',
+            $gateway2->get_prompt_texts()[0]
+        );
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuáles son las secciones del curso?<QUESTION_END>',
+            $gateway2->get_prompt_texts()[1]
+        );
+        \local_parce\local\controller::store_conversation(
+            $student->id,
+            $context->id,
+            'Cuáles son?',
+            $response2,
+            \local_parce\local\question_handler::get_last_action_ids(),
+            resolvedquestion: \local_parce\local\question_handler::get_last_resolved_question()
+        );
+
+        $plan3 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan3->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'sections', 'section' => 1],
+                'resolvedquestion' => 'Cuál es la segunda sección del curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer3 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer3->set_response_data([
+            'generatedcontent' => 'La segunda sección es Nueva sección.',
+            'model' => 'fake-model',
+        ]);
+        $gateway3 = new test_ai_gateway([$plan3, $answer3], $provider);
+        $response3 = \local_parce\local\question_handler::process('Y la segunda?', $context, $gateway3);
+
+        $this->assertSame('La segunda sección es Nueva sección.', $response3);
+        $planprompt = $gateway3->get_prompt_texts()[0];
+        $this->assertStringContainsString(
+            '<RESOLVED_START>Cuántas secciones tiene este curso?<RESOLVED_END>',
+            $planprompt
+        );
+        $this->assertStringContainsString(
+            '<RESOLVED_START>Cuáles son las secciones del curso?<RESOLVED_END>',
+            $planprompt
+        );
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuál es la segunda sección del curso?<QUESTION_END>',
+            $gateway3->get_prompt_texts()[1]
+        );
+    }
+
+    /**
+     * A follow-up that already names a new topic is planned with its own wording.
+     */
+    public function test_explicit_topic_change_keeps_own_question_text(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Curso tema', 'numsections' => 1]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+        $context = \context_course::instance($course->id);
+
+        \local_parce\local\controller::store_conversation(
+            $student->id,
+            $context->id,
+            'Cuántas secciones tiene este curso?',
+            'El curso tiene 2 secciones.',
+            resolvedquestion: 'Cuántas secciones tiene este curso?'
+        );
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'resources'],
+                'resolvedquestion' => 'Cuáles son las tareas del curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer->set_response_data([
+            'generatedcontent' => 'No hay tareas visibles.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $answer], $provider);
+
+        $result = \local_parce\local\question_handler::process(
+            'Cuáles son las tareas del curso?',
+            $context,
+            $gateway
+        );
+
+        $this->assertSame('No hay tareas visibles.', $result);
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuáles son las tareas del curso?<QUESTION_END>',
+            $gateway->get_prompt_texts()[0]
+        );
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuáles son las tareas del curso?<QUESTION_END>',
+            $gateway->get_prompt_texts()[1]
+        );
+        $this->assertSame(2, $gateway->get_generate_calls());
+    }
+
+    /**
+     * NOT_FOUND with prior turns replans once using the resolved question.
+     */
+    public function test_not_found_with_history_replans_once_with_resolved_question(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Curso reintento', 'numsections' => 2]);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+        $context = \context_course::instance($course->id);
+
+        \local_parce\local\controller::store_conversation(
+            $student->id,
+            $context->id,
+            'Cuántas secciones tiene este curso?',
+            'El curso tiene 3 secciones.',
+            resolvedquestion: 'Cuántas secciones tiene este curso?'
+        );
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan1 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan1->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'resources'],
+                'resolvedquestion' => 'Cuáles son las secciones del curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer1 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer1->set_response_data([
+            'generatedcontent' => 'NOT_FOUND',
+            'model' => 'fake-model',
+        ]);
+        $plan2 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan2->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'sections'],
+                'resolvedquestion' => 'Cuáles son las secciones del curso?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer2 = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer2->set_response_data([
+            'generatedcontent' => 'Las secciones son General y Nueva sección.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan1, $answer1, $plan2, $answer2], $provider);
+
+        $result = \local_parce\local\question_handler::process('Cuáles son?', $context, $gateway);
+
+        $this->assertSame('Las secciones son General y Nueva sección.', $result);
+        $this->assertSame(4, $gateway->get_generate_calls());
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuáles son las secciones del curso?<QUESTION_END>',
+            $gateway->get_prompt_texts()[2]
+        );
+        $this->assertStringContainsString(
+            '<QUESTION_START>Cuáles son las secciones del curso?<QUESTION_END>',
+            $gateway->get_prompt_texts()[3]
+        );
+        $this->assertTrue(\local_parce\local\question_handler::was_last_successful());
+    }
+
+    /**
+     * NOT_FOUND without history keeps the existing humanised fallback.
+     */
+    public function test_not_found_without_history_keeps_fallback(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'content',
+                'params' => [],
+                'resolvedquestion' => 'Question without an answer',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer->set_response_data([
+            'generatedcontent' => "  NOT_FOUND\n",
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $answer], $provider);
+
+        $result = \local_parce\local\question_handler::process(
+            'Question without an answer',
+            \context_system::instance(),
+            $gateway
+        );
+
+        $this->assertSame(get_string('answer_notfound', 'local_parce'), $result);
+        $this->assertSame(2, $gateway->get_generate_calls());
+        $this->assertFalse(\local_parce\local\question_handler::was_last_successful());
+    }
 }

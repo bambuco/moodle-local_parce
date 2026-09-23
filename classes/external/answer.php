@@ -110,7 +110,8 @@ class answer extends external_api {
                     question: $question,
                     response: $answer,
                     actionids: \local_parce\local\question_handler::get_last_action_ids(),
-                    cacheversion: $cacheversion
+                    cacheversion: $cacheversion,
+                    resolvedquestion: \local_parce\local\question_handler::get_last_resolved_question()
                 );
             } else {
                 controller::restore_prepared_conversation($snapshot);

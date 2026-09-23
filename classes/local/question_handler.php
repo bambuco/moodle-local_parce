@@ -50,6 +50,11 @@ class question_handler {
     private static bool $lastsuccessful = false;
 
     /**
+     * @var string Standalone form of the last planned question for later conversation prompts.
+     */
+    private static string $lastresolvedquestion = '';
+
+    /**
      * @var array Structured outcome of the last process() call.
      */
     private static array $lastresult = [
@@ -66,6 +71,15 @@ class question_handler {
      */
     public static function get_last_action_ids(): array {
         return self::$lastactionids;
+    }
+
+    /**
+     * Get the standalone form of the last planned question.
+     *
+     * @return string Resolved question text, or empty when planning did not complete.
+     */
+    public static function get_last_resolved_question(): string {
+        return self::$lastresolvedquestion;
     }
 
     /**
@@ -108,6 +122,7 @@ class question_handler {
 
         self::$lastactionids = [];
         self::$lastsuccessful = false;
+        self::$lastresolvedquestion = '';
         self::$lastresult = self::failure_result('processing_error', true);
         $cacheversion = controller::get_active_cache_version();
 
@@ -130,229 +145,362 @@ class question_handler {
             $requestid = bin2hex(random_bytes(32));
             $gateway = $gateway ?? new ai_gateway();
 
-            // Time 1: Get the real intention of the question.
             $previous = self::get_conversation_context($USER->id, $chatid);
-            $prompt = get_config('local_parce', 'question_plan_prompt');
-            if (empty($prompt)) {
-                $prompt = get_string('default_question_plan_prompt', 'local_parce');
+            $planprompt = get_config('local_parce', 'question_plan_prompt');
+            if (empty($planprompt)) {
+                $planprompt = get_string('default_question_plan_prompt', 'local_parce');
             }
-            $coursecard = controller::build_course_card($context, $USER->id);
-            $resourcetypes = intent\resource::get_module_type_catalogue($context);
-            $resourcetypes = empty($resourcetypes) ? '' : json_encode($resourcetypes, JSON_UNESCAPED_SLASHES);
-            $hackquestion = controller::build_ai_payload($question, $previous, '', $resourcetypes, $coursecard);
-            $action = new question_plan(
-                contextid: $context->id,
-                userid: $USER->id,
-                prompttext: $hackquestion
-            );
-
-            $generation = self::traced_generate(
-                $gateway,
-                $action,
-                $USER->id,
-                $context->id,
-                $chatid,
-                $conversationkey,
-                $requestid,
-                'question_plan',
-                $prompt,
-                $hackquestion,
-                $cacheversion,
-                function ($response): string {
-                    if (!$response->get_success()) {
-                        if ($response->get_errorcode() === 429) {
-                            return 'rate_limited';
-                        }
-                        return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
-                    }
-                    $content = $response->get_response_data()['generatedcontent'] ?? '';
-                    if ($content === '') {
-                        return 'empty_response';
-                    }
-                    $decoded = json_decode($content, true);
-                    if (json_last_error() !== JSON_ERROR_NONE) {
-                        return 'invalid_json';
-                    }
-                    $valid = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
-                    return is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $valid, true)
-                        ? 'success' : 'invalid_intent';
-                }
-            );
-            if ($generation === null) {
-                return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
-            }
-            $response = $generation['response'];
-            if (!controller::is_active_cache_version($cacheversion)) {
-                return self::failure_response('error_processing_question', 'request_cancelled', true);
-            }
-            $planactionid = self::$lastcallids[0];
-
-            $generatedcontent = '';
-            // Check if successful.
-            if ($response->get_success()) {
-                $responsedata = $response->get_response_data();
-
-                if (empty($responsedata['generatedcontent'])) {
-                    return self::failure_response('error_no_content', 'planning_empty', true);
-                }
-                $generatedcontent = $responsedata['generatedcontent'];
-            } else {
-                return self::provider_failure_response($response, 'planning_failed');
-            }
-
-            // Time 2: Get the response based on the intention.
-            $type = @json_decode($generatedcontent, true);
-
-            $intentavailable = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
-            if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
-                return self::failure_response('error_processing_question', 'invalid_intent', true);
-            }
-
-            $intentname = $type['type'];
-            $intentparams = $type['params'] ?? [];
-            if (!is_array($intentparams)) {
-                $intentparams = [$intentparams];
-            }
-
-            // Update the plan action with the detected intent.
-            foreach (self::$lastcallids as $actionid) {
-                controller::update_ai_action($actionid, $intentname, $intentparams);
-            }
-
-            $intentclass = '\local_parce\local\intent\\' . $intentname;
-
-            if (!class_exists($intentclass)) {
-                return self::failure_response('error_processing_question', 'invalid_intent', true);
-            }
-
-            $intentobj = new $intentclass($context, null, $intentparams);
-
-            try {
-                $content = $intentobj->get_content();
-            } catch (\moodle_exception $e) {
-                $notfounderrors = [
-                    'intent_content_notfound',
-                    'intent_course_notfound',
-                    'intent_dates_notfound',
-                    'intent_grades_notfound',
-                    'intent_progress_notfound',
-                    'intent_resource_notfound',
-                ];
-                if (in_array($e->errorcode, $notfounderrors, true)) {
-                    return self::success_response($question, $e->getMessage(), false);
-                }
-                return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
-            } catch (\Throwable $e) {
-                return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
-            }
-
-            if (!$intentobj->require_ia()) {
-                return self::success_response($question, $content);
-            }
-
-            // Course and similar search records may only contain a name and URL. Return those directly even if an
-            // older or customised planning prompt classified the navigational request as content.
-            if ($intentname === 'content' && intent\content::are_link_only_results($content)) {
-                $resources = intent\content::format_search_results($content, 'resource_results');
-                if ($resources !== '') {
-                    return self::success_response($question, $resources);
-                }
-            }
-
-            if (empty($content)) {
-                $allowopenanswer = get_config('local_parce', 'allowopenanswer');
-                if (!$allowopenanswer) {
-                    return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
-                }
-
-                $content = get_config('local_parce', 'openanswer_prompt');
-
-                if (empty($content)) {
-                    $content = get_string('default_openanswer_prompt', 'local_parce');
-                }
-            }
-
-            $previous = self::get_conversation_context($USER->id, $chatid);
             $answerprompt = get_config('local_parce', 'answer_question_prompt');
             if (empty($answerprompt)) {
                 $answerprompt = get_string('default_answer_question_prompt', 'local_parce');
             }
-            $hackquestion = controller::build_ai_payload($question, $previous, $content, '', $coursecard);
-            $action = new question_plan(
-                contextid: $context->id,
-                userid: $USER->id,
-                prompttext: $hackquestion
-            );
+            $coursecard = controller::build_course_card($context, $USER->id);
+            $resourcetypes = intent\resource::get_module_type_catalogue($context);
+            $resourcetypes = empty($resourcetypes) ? '' : json_encode($resourcetypes, JSON_UNESCAPED_SLASHES);
 
-            $generation = self::traced_generate(
-                $gateway,
-                $action,
-                $USER->id,
-                $context->id,
-                $chatid,
-                $conversationkey,
-                $requestid,
-                'answer_question',
-                $answerprompt,
-                $hackquestion,
-                $cacheversion,
-                function ($response): string {
-                    if (!$response->get_success()) {
-                        if ($response->get_errorcode() === 429) {
-                            return 'rate_limited';
-                        }
-                        return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+            $planquestion = $question;
+            $allowretry = $previous !== [];
+            $retried = false;
+
+            while (true) {
+                $planned = self::plan_question(
+                    $gateway,
+                    $context,
+                    $USER->id,
+                    $chatid,
+                    $conversationkey,
+                    $requestid,
+                    $planprompt,
+                    $planquestion,
+                    $previous,
+                    $resourcetypes,
+                    $coursecard,
+                    $cacheversion
+                );
+                if (is_string($planned)) {
+                    return $planned;
+                }
+
+                [
+                    'intentname' => $intentname,
+                    'intentparams' => $intentparams,
+                    'resolvedquestion' => $resolvedquestion,
+                ] = $planned;
+                self::$lastresolvedquestion = $resolvedquestion;
+
+                $intentclass = '\local_parce\local\intent\\' . $intentname;
+                if (!class_exists($intentclass)) {
+                    return self::failure_response('error_processing_question', 'invalid_intent', true);
+                }
+
+                $intentobj = new $intentclass($context, null, $intentparams);
+
+                try {
+                    $content = $intentobj->get_content();
+                } catch (\moodle_exception $e) {
+                    $notfounderrors = [
+                        'intent_content_notfound',
+                        'intent_course_notfound',
+                        'intent_dates_notfound',
+                        'intent_grades_notfound',
+                        'intent_progress_notfound',
+                        'intent_resource_notfound',
+                    ];
+                    if (in_array($e->errorcode, $notfounderrors, true)) {
+                        return self::success_response($question, $e->getMessage(), false);
                     }
-                    return empty($response->get_response_data()['generatedcontent']) ? 'empty_response' : 'success';
+                    return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
+                } catch (\Throwable $e) {
+                    return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
                 }
-            );
-            if ($generation === null) {
-                return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
-            }
-            $response = $generation['response'];
-            if (!controller::is_active_cache_version($cacheversion)) {
-                return self::failure_response('error_processing_question', 'request_cancelled', true);
-            }
 
-            // Set the intent on the answer action too.
-            foreach (self::$lastcallids as $actionid) {
-                controller::update_ai_action($actionid, $intentname, $intentparams);
-            }
-
-            $generatedcontent = '';
-            // Check if successful.
-            if ($response->get_success()) {
-                $responsedata = $response->get_response_data();
-
-                if (empty($responsedata['generatedcontent'])) {
-                    return self::failure_response('error_no_content', 'response_empty', true);
+                if (!$intentobj->require_ia()) {
+                    return self::success_response($question, $content);
                 }
-                $generatedcontent = $responsedata['generatedcontent'];
-            } else {
-                return self::provider_failure_response($response, 'response_failed');
-            }
 
-            // NOT_FOUND is an internal provider sentinel and must never be displayed or decorated with references.
-            if (trim($generatedcontent) === 'NOT_FOUND') {
-                $suggestions = intent\content::format_search_results($content, 'content_suggestions');
-                if ($suggestions !== '') {
-                    return self::success_response($question, $suggestions);
+                // Course and similar search records may only contain a name and URL. Return those directly even if an
+                // older or customised planning prompt classified the navigational request as content.
+                if ($intentname === 'content' && intent\content::are_link_only_results($content)) {
+                    $resources = intent\content::format_search_results($content, 'resource_results');
+                    if ($resources !== '') {
+                        return self::success_response($question, $resources);
+                    }
                 }
-                return self::success_response($question, get_string('answer_notfound', 'local_parce'), false);
-            }
 
-            // Append course references if the content came from courses other than the current one.
-            // Course-structure payloads already include their own links and must not be decorated.
-            if ($intentname !== 'course') {
-                $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
-            }
+                if (empty($content)) {
+                    $allowopenanswer = get_config('local_parce', 'allowopenanswer');
+                    if (!$allowopenanswer) {
+                        return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
+                    }
 
-            return self::success_response($question, $generatedcontent);
+                    $content = get_config('local_parce', 'openanswer_prompt');
+
+                    if (empty($content)) {
+                        $content = get_string('default_openanswer_prompt', 'local_parce');
+                    }
+                }
+
+                $answered = self::answer_question(
+                    $gateway,
+                    $context,
+                    $USER->id,
+                    $chatid,
+                    $conversationkey,
+                    $requestid,
+                    $answerprompt,
+                    $resolvedquestion,
+                    $previous,
+                    $content,
+                    $coursecard,
+                    $cacheversion,
+                    $intentname,
+                    $intentparams
+                );
+                if (is_string($answered)) {
+                    return $answered;
+                }
+
+                if (($answered['status'] ?? '') === 'not_found') {
+                    if ($allowretry && !$retried) {
+                        $planquestion = $resolvedquestion;
+                        $retried = true;
+                        continue;
+                    }
+                    $suggestions = intent\content::format_search_results($content, 'content_suggestions');
+                    if ($suggestions !== '') {
+                        return self::success_response($question, $suggestions);
+                    }
+                    return self::success_response($question, get_string('answer_notfound', 'local_parce'), false);
+                }
+
+                $generatedcontent = $answered['generatedcontent'];
+                // Append course references if the content came from courses other than the current one.
+                // Course-structure payloads already include their own links and must not be decorated.
+                if ($intentname !== 'course') {
+                    $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
+                }
+
+                return self::success_response($question, $generatedcontent);
+            }
         } catch (\core\exception\coding_exception $e) {
             return self::failure_response('error_ai_unavailable', 'ai_unavailable', true, $e->getMessage());
         } catch (\Throwable $e) {
             return self::failure_response('error_processing_question', 'processing_error', true, $e->getMessage());
         }
+    }
+
+    /**
+     * Plan the intent for one question attempt.
+     *
+     * @param ai_gateway $gateway AI gateway
+     * @param object $context Moodle context
+     * @param int $userid User ID
+     * @param int $chatid Chat context ID
+     * @param string $conversationkey Conversation key
+     * @param string $requestid Request ID
+     * @param string $planprompt System instruction for planning
+     * @param string $planquestion Question text sent to the planner
+     * @param array $previous Prior conversation messages
+     * @param string $resourcetypes Resource type catalogue JSON
+     * @param string $coursecard Course identity card JSON
+     * @param int $cacheversion Active cache version
+     * @return array|string Planned intent data, or a failure display string
+     */
+    private static function plan_question(
+        ai_gateway $gateway,
+        object $context,
+        int $userid,
+        int $chatid,
+        string $conversationkey,
+        string $requestid,
+        string $planprompt,
+        string $planquestion,
+        array $previous,
+        string $resourcetypes,
+        string $coursecard,
+        int $cacheversion
+    ): array|string {
+        $hackquestion = controller::build_ai_payload($planquestion, $previous, '', $resourcetypes, $coursecard);
+        $action = new question_plan(
+            contextid: $context->id,
+            userid: $userid,
+            prompttext: $hackquestion
+        );
+
+        $generation = self::traced_generate(
+            $gateway,
+            $action,
+            $userid,
+            $context->id,
+            $chatid,
+            $conversationkey,
+            $requestid,
+            'question_plan',
+            $planprompt,
+            $hackquestion,
+            $cacheversion,
+            function ($response): string {
+                if (!$response->get_success()) {
+                    if ($response->get_errorcode() === 429) {
+                        return 'rate_limited';
+                    }
+                    return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+                }
+                $content = $response->get_response_data()['generatedcontent'] ?? '';
+                if ($content === '') {
+                    return 'empty_response';
+                }
+                $decoded = json_decode($content, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return 'invalid_json';
+                }
+                $valid = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
+                return is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $valid, true)
+                    ? 'success' : 'invalid_intent';
+            }
+        );
+        if ($generation === null) {
+            return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
+        }
+        $response = $generation['response'];
+        if (!controller::is_active_cache_version($cacheversion)) {
+            return self::failure_response('error_processing_question', 'request_cancelled', true);
+        }
+
+        if (!$response->get_success()) {
+            return self::provider_failure_response($response, 'planning_failed');
+        }
+        $responsedata = $response->get_response_data();
+        if (empty($responsedata['generatedcontent'])) {
+            return self::failure_response('error_no_content', 'planning_empty', true);
+        }
+
+        $type = @json_decode($responsedata['generatedcontent'], true);
+        $intentavailable = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
+        if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
+            return self::failure_response('error_processing_question', 'invalid_intent', true);
+        }
+
+        $intentname = $type['type'];
+        $intentparams = $type['params'] ?? [];
+        if (!is_array($intentparams)) {
+            $intentparams = [$intentparams];
+        }
+
+        $resolvedquestion = trim((string) ($type['resolvedquestion'] ?? ''));
+        if ($resolvedquestion === '') {
+            $resolvedquestion = $planquestion;
+        }
+
+        $storedparams = $intentparams;
+        $storedparams['resolvedquestion'] = $resolvedquestion;
+        foreach (self::$lastcallids as $actionid) {
+            controller::update_ai_action($actionid, $intentname, $storedparams);
+        }
+
+        return [
+            'intentname' => $intentname,
+            'intentparams' => $intentparams,
+            'resolvedquestion' => $resolvedquestion,
+        ];
+    }
+
+    /**
+     * Ask the answer model using the resolved standalone question.
+     *
+     * @param ai_gateway $gateway AI gateway
+     * @param object $context Moodle context
+     * @param int $userid User ID
+     * @param int $chatid Chat context ID
+     * @param string $conversationkey Conversation key
+     * @param string $requestid Request ID
+     * @param string $answerprompt System instruction for answering
+     * @param string $resolvedquestion Standalone question for the answerer
+     * @param array $previous Prior conversation messages
+     * @param string $content Retrieved content
+     * @param string $coursecard Course identity card JSON
+     * @param int $cacheversion Active cache version
+     * @param string $intentname Detected intent type
+     * @param array $intentparams Intent parameters without resolvedquestion
+     * @return array|string Answer payload, not_found status, or a failure display string
+     */
+    private static function answer_question(
+        ai_gateway $gateway,
+        object $context,
+        int $userid,
+        int $chatid,
+        string $conversationkey,
+        string $requestid,
+        string $answerprompt,
+        string $resolvedquestion,
+        array $previous,
+        string $content,
+        string $coursecard,
+        int $cacheversion,
+        string $intentname,
+        array $intentparams
+    ): array|string {
+        $hackquestion = controller::build_ai_payload($resolvedquestion, $previous, $content, '', $coursecard);
+        $action = new question_plan(
+            contextid: $context->id,
+            userid: $userid,
+            prompttext: $hackquestion
+        );
+
+        $generation = self::traced_generate(
+            $gateway,
+            $action,
+            $userid,
+            $context->id,
+            $chatid,
+            $conversationkey,
+            $requestid,
+            'answer_question',
+            $answerprompt,
+            $hackquestion,
+            $cacheversion,
+            function ($response): string {
+                if (!$response->get_success()) {
+                    if ($response->get_errorcode() === 429) {
+                        return 'rate_limited';
+                    }
+                    return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+                }
+                return empty($response->get_response_data()['generatedcontent']) ? 'empty_response' : 'success';
+            }
+        );
+        if ($generation === null) {
+            return self::failure_response('error_ai_unavailable', 'ai_unavailable', true);
+        }
+        $response = $generation['response'];
+        if (!controller::is_active_cache_version($cacheversion)) {
+            return self::failure_response('error_processing_question', 'request_cancelled', true);
+        }
+
+        $storedparams = $intentparams;
+        $storedparams['resolvedquestion'] = $resolvedquestion;
+        foreach (self::$lastcallids as $actionid) {
+            controller::update_ai_action($actionid, $intentname, $storedparams);
+        }
+
+        if (!$response->get_success()) {
+            return self::provider_failure_response($response, 'response_failed');
+        }
+        $responsedata = $response->get_response_data();
+        if (empty($responsedata['generatedcontent'])) {
+            return self::failure_response('error_no_content', 'response_empty', true);
+        }
+
+        $generatedcontent = $responsedata['generatedcontent'];
+        // NOT_FOUND is an internal provider sentinel and must never be displayed or decorated with references.
+        if (trim($generatedcontent) === 'NOT_FOUND') {
+            return ['status' => 'not_found'];
+        }
+
+        return [
+            'status' => 'success',
+            'generatedcontent' => $generatedcontent,
+        ];
     }
 
     /**

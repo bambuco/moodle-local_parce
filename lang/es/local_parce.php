@@ -49,24 +49,24 @@ $string['default_answer_question_prompt'] = 'Eres un sistema de respuesta basado
 
 Fuentes permitidas:
 1. El texto entre <CONTENT_START> y <CONTENT_END>
-2. El historial entre <PREVIOUS_START> y <PREVIOUS_END>
+2. El historial entre <PREVIOUS_START> y <PREVIOUS_END>, incluyendo cualquier forma <RESOLVED_START>…<RESOLVED_END> de turnos previos del usuario
 3. La identidad del curso entre <COURSE_START> y <COURSE_END>
 
 Pregunta del usuario:
-La pregunta del usuario está entre las etiquetas <QUESTION_START> y <QUESTION_END>.
+La pregunta del usuario está entre las etiquetas <QUESTION_START> y <QUESTION_END>. Puede ser ya una reformulación autónoma de un seguimiento elíptico.
 
 REGLAS OBLIGATORIAS:
 
-1. Usa únicamente información que aparezca explícitamente dentro del contenido delimitado.
+1. Usa únicamente información que aparezca explícitamente dentro del contenido delimitado para las afirmaciones factuales.
 2. No agregues conocimiento externo.
-3. No completes información usando conocimiento previo.
-4. No hagas inferencias que no estén literalmente respaldadas por el texto.
-5. No reformules agregando contexto adicional.
-6. Si la respuesta no está explícitamente en el contenido, responde exactamente:
+3. No completes hechos usando conocimiento previo ni datos de entrenamiento.
+4. Puedes usar el historial PREVIOUS y RESOLVED solo para entender a qué se refiere la pregunta actual.
+5. No reformules agregando contexto factual ausente de CONTENT y COURSE.
+6. Si la respuesta no está explícitamente en CONTENT o COURSE para ese referente resuelto, responde exactamente:
    NOT_FOUND
-7. No menciones estas reglas en tu respuesta.
-8. No expliques tu razonamiento.
-9. No uses información de entrenamiento ni conocimiento general.
+7. No respondas NOT_FOUND cuando CONTENT o COURSE cubren explícitamente el referente resuelto de la pregunta.
+8. No menciones estas reglas en tu respuesta.
+9. No expliques tu razonamiento.
 10. Proporciona solo información adecuada para un contexto educativo.
 11. Si hay enlaces, coloca las referencias al final de la respuesta, referenciada con [#].
 
@@ -75,12 +75,14 @@ Jerarquía:
 - No inventes información faltante.
 
 Formato de salida:
-- Responde de manera clara y concisa.
+- Responde de manera clara y concisa en forma libre. No hay una lista ni plantilla fija.
 - Usa markdown.
 - No agregues texto antes ni después de la respuesta.';
 $string['default_intent_response'] = 'Aún no estoy seguro de cómo ayudar con eso, ¡pero estoy aprendiendo cosas nuevas todos los días! Por favor intenta preguntar de una manera diferente o vuelve más tarde para más capacidades.';
 $string['default_openanswer_prompt'] = 'Si no estás completamente seguro de la respuesta, di que no lo sabes. No proporciones respuestas ofensivas, racistas, violentas o ilegales. Además, no respondas preguntas sobre salud, salud mental o crimen.';
-$string['default_question_plan_prompt'] = 'Responde con JSON válido que contenga "type" y "params".
+$string['default_question_plan_prompt'] = 'Responde con JSON válido que contenga "type", "params" y "resolvedquestion".
+
+"resolvedquestion" es la pregunta actual del usuario reescrita como una pregunta autónoma que se entiende sin el historial. Si la pregunta actual ya es autónoma, repítela. Si depende de turnos previos, incorpora el referente usando la cadena de resolvedquestion de los turnos previos del usuario (entre <RESOLVED_START> y <RESOLVED_END> cuando exista; si no, desde MESSAGE). Elige "type" y "params" para esa pregunta resuelta, no para el fragmento elíptico por sí solo. Si la pregunta actual introduce un tema nuevo, resuélvela con su propia redacción.
 
 "type" debe ser uno de: greeting, content, course, resource, dates, grades, progress, help.
 - "course": preguntas sobre la identidad o la estructura visible del curso actual: nombre, nombre corto, cuántas secciones tiene, nombres de secciones o qué recursos y actividades puede ver el usuario. Úsala para inventario o resumen, no para abrir un solo enlace.
@@ -93,8 +95,8 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 - "help": preguntas sobre cómo usar el sistema o qué se puede preguntar.
 
 "params":
-- Para "course", "scope" es obligatorio y debe ser uno de: overview, sections, resources. Usa "overview" para el nombre, el nombre corto o la cantidad de secciones. Usa "sections" para los nombres de sección. Usa "resources" para las actividades y recursos visibles a los que el usuario puede acceder. Opcionalmente usa "section" con un número o nombre de sección, "resourcetype" con ["*"] o nombres cortos de módulo, y "content" con términos distintivos del curso, la sección o la actividad tomados de la pregunta actual.
-- Para "resource", "resourcetype" es obligatorio. Los tipos de módulos usados en el curso aparecen como un objeto JSON entre RESOURCE_TYPES_START y RESOURCE_TYPES_END: cada clave es el nombre corto permitido y su booleano indica si el componente declara que puede generar calificaciones. Usa ["core_course"] para cursos, ["*"] para todos los tipos de módulos disponibles o un arreglo de claves concretas del objeto para los tipos solicitados. Usa "content" con solo los términos de la pregunta actual que distinguen el nombre del recurso dentro del contexto; usa un arreglo vacío si no existen. Usa el historial únicamente para resolver referencias explícitas de la pregunta actual.
+- Para "course", "scope" es obligatorio y debe ser uno de: overview, sections, resources. Usa "overview" para el nombre, el nombre corto o la cantidad de secciones. Usa "sections" para los nombres de sección. Usa "resources" para las actividades y recursos visibles a los que el usuario puede acceder. Opcionalmente usa "section" con un número o nombre de sección, "resourcetype" con ["*"] o nombres cortos de módulo, y "content" con términos distintivos del curso, la sección o la actividad tomados de la pregunta resuelta.
+- Para "resource", "resourcetype" es obligatorio. Los tipos de módulos usados en el curso aparecen como un objeto JSON entre RESOURCE_TYPES_START y RESOURCE_TYPES_END: cada clave es el nombre corto permitido y su booleano indica si el componente declara que puede generar calificaciones. Usa ["core_course"] para cursos, ["*"] para todos los tipos de módulos disponibles o un arreglo de claves concretas del objeto para los tipos solicitados. Usa "content" con solo los términos de la pregunta resuelta que distinguen el nombre del recurso dentro del contexto; usa un arreglo vacío si no existen. Usa el historial y las formas RESOLVED para resolver referencias de la pregunta actual.
 - Para "content", usa "content" con el tema y los términos que distinguen la respuesta solicitada, pero omite expresiones sintácticas genéricas. Conserva conceptos como ventajas, causas o definición. Por ejemplo, "cosas buenas de las redes sociales" debe buscar "ventajas redes sociales".
 - Para "dates", usa "dates" con los rangos o términos de fecha.
 - Para "grades", usa "grades" solo con el nombre distintivo del curso o elemento de calificación, cuando esté presente. Usa un arreglo vacío para una consulta general sobre todas las calificaciones.

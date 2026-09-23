@@ -424,6 +424,8 @@ class controller
      * @param string $response The system's response
      * @param int[] $actionids AI action records to link atomically
      * @param int|null $cacheversion Expected global cache version
+     * @param bool $persist Whether to write the durable database turn
+     * @param string $resolvedquestion Standalone form of the question for later prompts
      * @return int The ID of the inserted conversation entry record
      */
     public static function store_conversation_entry(
@@ -433,7 +435,8 @@ class controller
         string $response,
         array $actionids = [],
         ?int $cacheversion = null,
-        bool $persist = true
+        bool $persist = true,
+        string $resolvedquestion = ''
     ): int {
         global $DB;
 
@@ -456,12 +459,16 @@ class controller
             ];
         }
 
-        // Add user question.
-        $data['entries'][] = [
+        // Add user question. The original wording stays in content; resolvedquestion is for later prompts.
+        $userentry = [
             'role' => 'user',
             'content' => $question,
             'timestamp' => $currenttime,
         ];
+        if ($resolvedquestion !== '') {
+            $userentry['resolvedquestion'] = $resolvedquestion;
+        }
+        $data['entries'][] = $userentry;
 
         // Add system response.
         $data['entries'][] = [
@@ -519,7 +526,8 @@ class controller
         string $response,
         array $actionids = [],
         ?int $cacheversion = null,
-        bool $persist = true
+        bool $persist = true,
+        string $resolvedquestion = ''
     ): int {
         return self::store_conversation_entry(
             $userid,
@@ -528,7 +536,8 @@ class controller
             $response,
             $actionids,
             $cacheversion,
-            $persist
+            $persist,
+            $resolvedquestion
         );
     }
 
@@ -598,6 +607,9 @@ class controller
         $tokens = 0;
         foreach (array_reverse($turns) as $turn) {
             $turntokens = self::estimate_tokens($turn[0]['content']) + self::estimate_tokens($turn[1]['content']);
+            if (!empty($turn[0]['resolvedquestion'])) {
+                $turntokens += self::estimate_tokens($turn[0]['resolvedquestion']);
+            }
             if (count($selected) >= self::MAX_PROMPT_TURNS || $tokens + $turntokens > self::MAX_PROMPT_TOKENS) {
                 break;
             }
@@ -608,10 +620,14 @@ class controller
         $context = [];
         foreach (array_reverse($selected) as $turn) {
             foreach ($turn as $entry) {
-                $context[] = [
+                $message = [
                     'role' => $entry['role'],
                     'content' => $entry['content'],
                 ];
+                if (($entry['role'] ?? '') === 'user' && !empty($entry['resolvedquestion'])) {
+                    $message['resolvedquestion'] = $entry['resolvedquestion'];
+                }
+                $context[] = $message;
             }
         }
 
@@ -802,6 +818,9 @@ class controller
                 foreach ($previous as $entry) {
                     $text .= '<ROLE_START>' . ($entry['role'] ?? '') . '<ROLE_END>'
                         . '<MESSAGE_START>' . ($entry['content'] ?? '') . '<MESSAGE_END>';
+                    if (($entry['role'] ?? '') === 'user' && !empty($entry['resolvedquestion'])) {
+                        $text .= '<RESOLVED_START>' . $entry['resolvedquestion'] . '<RESOLVED_END>';
+                    }
                 }
                 $payload .= '<PREVIOUS_START>' . $text . '<PREVIOUS_END>';
             }
