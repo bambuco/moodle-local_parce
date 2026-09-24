@@ -61,14 +61,7 @@ class course extends base {
         foreach ($courses as $course) {
             $coursecontext = \context_course::instance($course->id);
             $modinfo = get_fast_modinfo($course, $this->user->id);
-            $sectioncount = \local_parce\local\controller::count_visible_sections($course, $this->user->id);
-            $courserecord = (object) [
-                'kind' => 'course',
-                'fullname' => format_string($course->fullname, true, ['context' => $coursecontext]),
-                'shortname' => format_string($course->shortname, true, ['context' => $coursecontext]),
-                'sectioncount' => $sectioncount,
-            ];
-            $found[] = $courserecord;
+            $found[] = $this->build_course_record($course, $coursecontext);
 
             if (!$expand) {
                 continue;
@@ -160,7 +153,7 @@ class course extends base {
             return [get_course($coursecontext->instanceid)];
         }
 
-        $courses = enrol_get_users_courses($this->user->id, true, 'id, fullname, shortname');
+        $courses = enrol_get_users_courses($this->user->id, true, 'id, fullname, shortname, startdate, enddate');
         if (empty($courses)) {
             return [];
         }
@@ -183,6 +176,129 @@ class course extends base {
 
         // Expand sections or resources only when one course is uniquely identified.
         return count($matched) === 1 ? $matched : array_values($courses);
+    }
+
+    /**
+     * Build the course identity record for the AI payload.
+     *
+     * @param \stdClass $course Course record.
+     * @param \context_course $coursecontext Course context.
+     * @return \stdClass
+     */
+    private function build_course_record(\stdClass $course, \context_course $coursecontext): \stdClass {
+        $record = (object) [
+            'kind' => 'course',
+            'fullname' => format_string($course->fullname, true, ['context' => $coursecontext]),
+            'shortname' => format_string($course->shortname, true, ['context' => $coursecontext]),
+            'sectioncount' => \local_parce\local\controller::count_visible_sections($course, $this->user->id),
+            'startdate' => $this->format_optional_date(
+                (int) ($course->startdate ?? 0),
+                get_string('nocoursestarttime', 'moodle')
+            ),
+            'enddate' => $this->format_optional_date(
+                (int) ($course->enddate ?? 0),
+                get_string('nocourseendtime', 'course')
+            ),
+        ];
+
+        $enrolment = $this->get_user_enrolment_window((int) $course->id);
+        if ($enrolment !== null) {
+            $record->enrolmentstart = $enrolment['start'];
+            $record->enrolmentend = $enrolment['end'];
+        }
+
+        $customfields = $this->get_public_custom_fields((int) $course->id);
+        if (!empty($customfields)) {
+            $record->customfields = $customfields;
+        }
+
+        return $record;
+    }
+
+    /**
+     * Format a unix timestamp for the AI, or return the fallback when unset.
+     *
+     * @param int $timestamp Unix timestamp.
+     * @param string $fallback Localised text when the date is not set.
+     * @return string
+     */
+    private function format_optional_date(int $timestamp, string $fallback): string {
+        return $timestamp > 0 ? userdate($timestamp) : $fallback;
+    }
+
+    /**
+     * Resolve the user's active enrolment window in a course.
+     *
+     * When several active enrolments exist, uses the earliest start and the
+     * latest end. A zero end on any enrolment means no scheduled end.
+     *
+     * @param int $courseid Course id.
+     * @return array{start: string, end: string}|null
+     */
+    private function get_user_enrolment_window(int $courseid): ?array {
+        $users = enrol_get_course_users($courseid, true, [$this->user->id]);
+        if (empty($users)) {
+            return null;
+        }
+
+        $minstart = null;
+        $maxend = null;
+        $hasopenend = false;
+        foreach ($users as $user) {
+            $timestart = (int) ($user->uetimestart ?? 0);
+            $timeend = (int) ($user->uetimeend ?? 0);
+            if ($minstart === null || $timestart < $minstart) {
+                $minstart = $timestart;
+            }
+            if ($timeend === 0) {
+                $hasopenend = true;
+            } else if ($maxend === null || $timeend > $maxend) {
+                $maxend = $timeend;
+            }
+        }
+
+        return [
+            'start' => $this->format_optional_date(
+                (int) $minstart,
+                get_string('nocoursestarttime', 'moodle')
+            ),
+            'end' => $hasopenend
+                ? get_string('nocourseendtime', 'course')
+                : $this->format_optional_date((int) $maxend, get_string('nocourseendtime', 'course')),
+        ];
+    }
+
+    /**
+     * Public course custom fields visible to everybody (VISIBLETOALL).
+     *
+     * @param int $courseid Course id.
+     * @return array<int, object>
+     */
+    private function get_public_custom_fields(int $courseid): array {
+        $handler = \core_course\customfield\course_handler::create();
+        $fieldsdata = $handler->get_instance_data($courseid, true);
+        $customfields = [];
+        foreach ($fieldsdata as $data) {
+            $visibility = (int) ($data->get_field()->get_configdata_property('visibility')
+                ?? \core_course\customfield\course_handler::VISIBLETOALL);
+            if ($visibility !== \core_course\customfield\course_handler::VISIBLETOALL) {
+                continue;
+            }
+            $value = $data->export_value();
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $text = trim(content_to_text((string) $value, FORMAT_HTML));
+            if ($text === '') {
+                continue;
+            }
+            $customfields[] = (object) [
+                'name' => $data->get_field()->get_formatted_name(),
+                'shortname' => $data->get_field()->get('shortname'),
+                'value' => $text,
+            ];
+        }
+        return $customfields;
     }
 
     /**

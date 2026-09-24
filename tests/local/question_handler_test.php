@@ -886,6 +886,164 @@ final class question_handler_test extends \advanced_testcase {
     }
 
     /**
+     * Course overview includes dates, enrolment window and public custom fields only.
+     */
+    public function test_course_overview_includes_dates_enrolment_and_public_customfields(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        \core_course\customfield\course_handler::reset_caches();
+
+        $catid = $this->getDataGenerator()->create_custom_field_category([])->get('id');
+        $this->getDataGenerator()->create_custom_field([
+            'categoryid' => $catid,
+            'type' => 'text',
+            'shortname' => 'publiccode',
+            'name' => 'Public code',
+            'configdata' => ['visibility' => \core_course\customfield\course_handler::VISIBLETOALL],
+        ]);
+        $this->getDataGenerator()->create_custom_field([
+            'categoryid' => $catid,
+            'type' => 'text',
+            'shortname' => 'teacheronly',
+            'name' => 'Teacher only',
+            'configdata' => ['visibility' => \core_course\customfield\course_handler::VISIBLETOTEACHERS],
+        ]);
+        $this->getDataGenerator()->create_custom_field([
+            'categoryid' => $catid,
+            'type' => 'text',
+            'shortname' => 'hiddenfield',
+            'name' => 'Hidden field',
+            'configdata' => ['visibility' => \core_course\customfield\course_handler::NOTVISIBLE],
+        ]);
+
+        $startdate = make_timestamp(2026, 3, 1);
+        $enddate = make_timestamp(2026, 12, 15);
+        $enrolstart = make_timestamp(2026, 2, 15);
+        $enrolend = make_timestamp(2027, 1, 31);
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso con metadatos',
+            'shortname' => 'META101',
+            'startdate' => $startdate,
+            'enddate' => $enddate,
+            'customfield_publiccode' => 'PUB-42',
+            'customfield_teacheronly' => 'SECRET-T',
+            'customfield_hiddenfield' => 'SECRET-H',
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol(
+            $course,
+            'student',
+            null,
+            'manual',
+            $enrolstart,
+            $enrolend
+        );
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'El curso inicia en marzo y el código público es PUB-42.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Cuándo inicia el curso y cuál es el código público?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('El curso inicia en marzo y el código público es PUB-42.', $answer);
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $this->assertStringContainsString(userdate($startdate), $answertrace->prompttext);
+        $this->assertStringContainsString(userdate($enddate), $answertrace->prompttext);
+        $this->assertStringContainsString(userdate($enrolstart), $answertrace->prompttext);
+        $this->assertStringContainsString(userdate($enrolend), $answertrace->prompttext);
+        $this->assertStringContainsString('PUB-42', $answertrace->prompttext);
+        $this->assertStringContainsString('publiccode', $answertrace->prompttext);
+        $this->assertStringNotContainsString('SECRET-T', $answertrace->prompttext);
+        $this->assertStringNotContainsString('SECRET-H', $answertrace->prompttext);
+        $this->assertStringNotContainsString('teacheronly', $answertrace->prompttext);
+        $this->assertStringNotContainsString('hiddenfield', $answertrace->prompttext);
+    }
+
+    /**
+     * Course overview reports when the course and enrolment have no scheduled end.
+     */
+    public function test_course_overview_reports_no_scheduled_end(): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $startdate = make_timestamp(2026, 1, 10);
+        $enrolstart = make_timestamp(2026, 1, 5);
+        $course = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso abierto',
+            'shortname' => 'OPEN101',
+            'startdate' => $startdate,
+            'enddate' => 0,
+        ]);
+        $student = $this->getDataGenerator()->create_and_enrol(
+            $course,
+            'student',
+            null,
+            'manual',
+            $enrolstart,
+            0
+        );
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'course',
+                'params' => ['scope' => 'overview'],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data([
+            'generatedcontent' => 'El curso no tiene fecha de fin programada.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $response], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            '¿Tiene fecha de fin el curso?',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('El curso no tiene fecha de fin programada.', $answer);
+        $answertrace = $DB->get_record(
+            'local_parce_ai_actions',
+            ['actiontype' => 'answer_question'],
+            '*',
+            MUST_EXIST
+        );
+        $noend = get_string('nocourseendtime', 'course');
+        $this->assertStringContainsString(userdate($startdate), $answertrace->prompttext);
+        $this->assertStringContainsString(userdate($enrolstart), $answertrace->prompttext);
+        $this->assertStringContainsString($noend, $answertrace->prompttext);
+        $this->assertSame(2, substr_count($answertrace->prompttext, $noend));
+    }
+
+    /**
      * Course resource scope returns only matching visible module types.
      */
     public function test_course_resources_filter_by_module_type(): void {
