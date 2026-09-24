@@ -37,6 +37,37 @@ use local_parce\aiactions\question_plan;
  */
 class question_handler {
     /**
+     * Hard cap on planner intents accepted in one turn (anti-abuse).
+     */
+    public const MAX_PLAN_INTENTS = 8;
+
+    /**
+     * Default and bounds for max_require_ia_intents.
+     */
+    public const DEFAULT_MAX_REQUIRE_IA = 2;
+    public const MIN_MAX_REQUIRE_IA = 1;
+    public const MAX_MAX_REQUIRE_IA = 5;
+
+    /**
+     * Intent types accepted from the planner.
+     */
+    private const INTENT_TYPES = [
+        'base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource',
+    ];
+
+    /**
+     * Error codes that mean retrieval found nothing for an intent.
+     */
+    private const NOT_FOUND_ERRORS = [
+        'intent_content_notfound',
+        'intent_course_notfound',
+        'intent_dates_notfound',
+        'intent_grades_notfound',
+        'intent_progress_notfound',
+        'intent_resource_notfound',
+    ];
+
+    /**
      * @var int[] IDs of the AI action log records created during processing.
      */
     private static array $lastactionids = [];
@@ -107,6 +138,23 @@ class question_handler {
      */
     public static function resolve_ai_provider(): ?\core_ai\provider {
         return (new ai_gateway())->resolve_provider();
+    }
+
+    /**
+     * Read and clamp the max require_ia intents setting.
+     *
+     * @return int Value between MIN_MAX_REQUIRE_IA and MAX_MAX_REQUIRE_IA.
+     */
+    public static function get_max_require_ia_intents(): int {
+        $value = get_config('local_parce', 'max_require_ia_intents');
+        if ($value === false || $value === null || $value === '') {
+            return self::DEFAULT_MAX_REQUIRE_IA;
+        }
+        $value = (int) $value;
+        if ($value < self::MIN_MAX_REQUIRE_IA || $value > self::MAX_MAX_REQUIRE_IA) {
+            return self::DEFAULT_MAX_REQUIRE_IA;
+        }
+        return $value;
     }
 
     /**
@@ -181,66 +229,55 @@ class question_handler {
                     return $planned;
                 }
 
-                [
-                    'intentname' => $intentname,
-                    'intentparams' => $intentparams,
-                    'resolvedquestion' => $resolvedquestion,
-                ] = $planned;
+                $intents = $planned['intents'];
+                $resolvedquestion = $planned['resolvedquestion'];
                 self::$lastresolvedquestion = $resolvedquestion;
 
-                $intentclass = '\local_parce\local\intent\\' . $intentname;
-                if (!class_exists($intentclass)) {
-                    return self::failure_response('error_processing_question', 'invalid_intent', true);
-                }
+                $selected = self::select_intents($intents, $context);
+                $collection = self::collect_intent_bundles($selected['admitted'], $context);
+                $deferred = array_merge($selected['deferred'], $collection['deferred']);
+                $bundles = $collection['bundles'];
 
-                $intentobj = new $intentclass($context, null, $intentparams);
-
-                try {
-                    $content = $intentobj->get_content();
-                } catch (\moodle_exception $e) {
-                    $notfounderrors = [
-                        'intent_content_notfound',
-                        'intent_course_notfound',
-                        'intent_dates_notfound',
-                        'intent_grades_notfound',
-                        'intent_progress_notfound',
-                        'intent_resource_notfound',
-                    ];
-                    if (in_array($e->errorcode, $notfounderrors, true)) {
-                        return self::success_response($question, $e->getMessage(), false);
+                if ($bundles === []) {
+                    if ($deferred !== []) {
+                        return self::success_response(
+                            $question,
+                            get_string('msg_no_content', 'local_parce') . "\n\n" . self::format_deferred_footer($deferred),
+                            false
+                        );
                     }
-                    return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
-                } catch (\Throwable $e) {
-                    return self::failure_response('error_processing_question', 'content_error', true, $e->getMessage());
+                    return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
                 }
 
-                if (!$intentobj->require_ia()) {
-                    return self::success_response($question, $content);
-                }
-
-                // Course and similar search records may only contain a name and URL. Return those directly even if an
-                // older or customised planning prompt classified the navigational request as content.
-                if ($intentname === 'content' && intent\content::are_link_only_results($content)) {
-                    $resources = intent\content::format_search_results($content, 'resource_results');
-                    if ($resources !== '') {
-                        return self::success_response($question, $resources);
+                // Single-intent path keeps the previous direct-return behaviour.
+                if (count($intents) === 1 && count($bundles) === 1 && $deferred === []) {
+                    $single = self::process_single_intent_response(
+                        $gateway,
+                        $context,
+                        $USER->id,
+                        $chatid,
+                        $conversationkey,
+                        $requestid,
+                        $answerprompt,
+                        $resolvedquestion,
+                        $previous,
+                        $coursecard,
+                        $cacheversion,
+                        $bundles[0],
+                        $allowretry,
+                        $retried,
+                        $planquestion,
+                        $question
+                    );
+                    if (is_array($single) && ($single['retry'] ?? false)) {
+                        $planquestion = $single['planquestion'];
+                        $retried = true;
+                        continue;
                     }
+                    return $single;
                 }
 
-                if (empty($content)) {
-                    $allowopenanswer = get_config('local_parce', 'allowopenanswer');
-                    if (!$allowopenanswer) {
-                        return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
-                    }
-
-                    $content = get_config('local_parce', 'openanswer_prompt');
-
-                    if (empty($content)) {
-                        $content = get_string('default_openanswer_prompt', 'local_parce');
-                    }
-                }
-
-                $answered = self::answer_question(
+                $response = self::process_multi_intent_response(
                     $gateway,
                     $context,
                     $USER->id,
@@ -248,45 +285,394 @@ class question_handler {
                     $conversationkey,
                     $requestid,
                     $answerprompt,
+                    $question,
                     $resolvedquestion,
                     $previous,
-                    $content,
                     $coursecard,
                     $cacheversion,
-                    $intentname,
-                    $intentparams
+                    $bundles,
+                    $deferred,
+                    $allowretry,
+                    $retried,
+                    $planquestion
                 );
-                if (is_string($answered)) {
-                    return $answered;
+                if (is_array($response) && ($response['retry'] ?? false)) {
+                    $planquestion = $response['planquestion'];
+                    $retried = true;
+                    continue;
                 }
-
-                if (($answered['status'] ?? '') === 'not_found') {
-                    if ($allowretry && !$retried) {
-                        $planquestion = $resolvedquestion;
-                        $retried = true;
-                        continue;
-                    }
-                    $suggestions = intent\content::format_search_results($content, 'content_suggestions');
-                    if ($suggestions !== '') {
-                        return self::success_response($question, $suggestions);
-                    }
-                    return self::success_response($question, get_string('answer_notfound', 'local_parce'), false);
-                }
-
-                $generatedcontent = $answered['generatedcontent'];
-                // Append course references if the content came from courses other than the current one.
-                // Course-structure payloads already include their own links and must not be decorated.
-                if ($intentname !== 'course') {
-                    $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
-                }
-
-                return self::success_response($question, $generatedcontent);
+                return $response;
             }
         } catch (\core\exception\coding_exception $e) {
             return self::failure_response('error_ai_unavailable', 'ai_unavailable', true, $e->getMessage());
         } catch (\Throwable $e) {
             return self::failure_response('error_processing_question', 'processing_error', true, $e->getMessage());
         }
+    }
+
+    /**
+     * Handle a single planned intent using the legacy return rules.
+     *
+     * @param array $bundle Collected bundle for the intent
+     * @return string|array Display string, or retry directive
+     */
+    private static function process_single_intent_response(
+        ai_gateway $gateway,
+        object $context,
+        int $userid,
+        int $chatid,
+        string $conversationkey,
+        string $requestid,
+        string $answerprompt,
+        string $resolvedquestion,
+        array $previous,
+        string $coursecard,
+        int $cacheversion,
+        array $bundle,
+        bool $allowretry,
+        bool $retried,
+        string $planquestion,
+        string $question
+    ): string|array {
+        $intentname = $bundle['type'];
+        $intentparams = $bundle['params'];
+        $content = $bundle['content'];
+
+        if ($bundle['status'] === 'not_found') {
+            return self::success_response($question, $bundle['message'] !== '' ? $bundle['message'] : get_string('msg_no_content', 'local_parce'), false);
+        }
+
+        if (!$bundle['require_ia']) {
+            return self::success_response($question, $content);
+        }
+
+        if ($intentname === 'content' && intent\content::are_link_only_results($content)) {
+            $resources = intent\content::format_search_results($content, 'resource_results');
+            if ($resources !== '') {
+                return self::success_response($question, $resources);
+            }
+        }
+
+        if ($content === '') {
+            $allowopenanswer = get_config('local_parce', 'allowopenanswer');
+            if (!$allowopenanswer) {
+                return self::success_response($question, get_string('msg_no_content', 'local_parce'), false);
+            }
+            $content = get_config('local_parce', 'openanswer_prompt');
+            if (empty($content)) {
+                $content = get_string('default_openanswer_prompt', 'local_parce');
+            }
+        }
+
+        $answered = self::answer_question(
+            $gateway,
+            $context,
+            $userid,
+            $chatid,
+            $conversationkey,
+            $requestid,
+            $answerprompt,
+            $resolvedquestion,
+            $previous,
+            $content,
+            $coursecard,
+            $cacheversion,
+            $intentname,
+            $intentparams
+        );
+        if (is_string($answered)) {
+            return $answered;
+        }
+
+        if (($answered['status'] ?? '') === 'not_found') {
+            if ($allowretry && !$retried) {
+                return ['retry' => true, 'planquestion' => $resolvedquestion];
+            }
+            $suggestions = intent\content::format_search_results($content, 'content_suggestions');
+            if ($suggestions !== '') {
+                return self::success_response($question, $suggestions);
+            }
+            return self::success_response($question, get_string('answer_notfound', 'local_parce'), false);
+        }
+
+        $generatedcontent = $answered['generatedcontent'];
+        if ($intentname !== 'course') {
+            $generatedcontent .= self::build_course_references($content, $context, $generatedcontent);
+        }
+
+        return self::success_response($question, $generatedcontent);
+    }
+
+    /**
+     * Collect data for several intents and ask the answer model once.
+     *
+     * @param array $bundles Retrieved intent bundles
+     * @param array $deferred Deferred intent descriptors
+     * @return string|array Display string, or retry directive
+     */
+    private static function process_multi_intent_response(
+        ai_gateway $gateway,
+        object $context,
+        int $userid,
+        int $chatid,
+        string $conversationkey,
+        string $requestid,
+        string $answerprompt,
+        string $question,
+        string $resolvedquestion,
+        array $previous,
+        string $coursecard,
+        int $cacheversion,
+        array $bundles,
+        array $deferred,
+        bool $allowretry,
+        bool $retried,
+        string $planquestion
+    ): string|array {
+        $needsanswer = count($bundles) > 1;
+        foreach ($bundles as $bundle) {
+            if (!empty($bundle['require_ia'])) {
+                $needsanswer = true;
+                break;
+            }
+        }
+
+        // Multi light-only: still one answer so the model unifies greeting + links + course facts.
+        if (!$needsanswer && count($bundles) === 1) {
+            $text = $bundles[0]['content'];
+            if ($deferred !== []) {
+                $text .= "\n\n" . self::format_deferred_footer($deferred);
+            }
+            return self::success_response($question, $text);
+        }
+
+        $content = self::format_intent_bundles($bundles);
+        if ($content === '') {
+            $allowopenanswer = get_config('local_parce', 'allowopenanswer');
+            if (!$allowopenanswer) {
+                $text = get_string('msg_no_content', 'local_parce');
+                if ($deferred !== []) {
+                    $text .= "\n\n" . self::format_deferred_footer($deferred);
+                }
+                return self::success_response($question, $text, false);
+            }
+            $content = get_config('local_parce', 'openanswer_prompt');
+            if (empty($content)) {
+                $content = get_string('default_openanswer_prompt', 'local_parce');
+            }
+        }
+
+        $traceparams = [
+            'intents' => array_map(static function(array $bundle): array {
+                return [
+                    'type' => $bundle['type'],
+                    'params' => $bundle['params'],
+                    'resolvedquestion' => $bundle['resolvedquestion'],
+                    'status' => $bundle['status'],
+                    'require_ia' => $bundle['require_ia'],
+                ];
+            }, $bundles),
+            'deferred' => array_map(static function(array $item): array {
+                return [
+                    'type' => $item['type'],
+                    'resolvedquestion' => $item['resolvedquestion'],
+                ];
+            }, $deferred),
+        ];
+
+        $answered = self::answer_question(
+            $gateway,
+            $context,
+            $userid,
+            $chatid,
+            $conversationkey,
+            $requestid,
+            $answerprompt,
+            $question,
+            $previous,
+            $content,
+            $coursecard,
+            $cacheversion,
+            count($bundles) === 1 ? $bundles[0]['type'] : 'multi',
+            $traceparams
+        );
+        if (is_string($answered)) {
+            return $answered;
+        }
+
+        if (($answered['status'] ?? '') === 'not_found') {
+            if ($allowretry && !$retried) {
+                return ['retry' => true, 'planquestion' => $resolvedquestion];
+            }
+            $text = get_string('answer_notfound', 'local_parce');
+            if ($deferred !== []) {
+                $text .= "\n\n" . self::format_deferred_footer($deferred);
+            }
+            return self::success_response($question, $text, false);
+        }
+
+        $generatedcontent = $answered['generatedcontent'];
+        if ($deferred !== []) {
+            $generatedcontent .= "\n\n" . self::format_deferred_footer($deferred);
+        }
+
+        return self::success_response($question, $generatedcontent);
+    }
+
+    /**
+     * Split planned intents into admitted and deferred by require_ia quota.
+     *
+     * @param array $intents Normalised intent list
+     * @param object $context Moodle context
+     * @return array{admitted: array, deferred: array}
+     */
+    private static function select_intents(array $intents, object $context): array {
+        $maxheavy = self::get_max_require_ia_intents();
+        $admitted = [];
+        $deferred = [];
+        $heavycount = 0;
+
+        foreach ($intents as $index => $intent) {
+            if (count($admitted) >= self::MAX_PLAN_INTENTS) {
+                $deferred[] = $intent;
+                continue;
+            }
+
+            $intentclass = '\local_parce\local\intent\\' . $intent['type'];
+            if (!class_exists($intentclass)) {
+                $deferred[] = $intent;
+                continue;
+            }
+
+            $probe = new $intentclass($context, null, $intent['params']);
+            $requireia = $probe->require_ia();
+            $intent['require_ia'] = $requireia;
+            $intent['index'] = $index;
+
+            if ($requireia) {
+                if ($heavycount < $maxheavy) {
+                    $admitted[] = $intent;
+                    $heavycount++;
+                } else {
+                    $deferred[] = $intent;
+                }
+            } else {
+                $admitted[] = $intent;
+            }
+        }
+
+        return ['admitted' => $admitted, 'deferred' => $deferred];
+    }
+
+    /**
+     * Retrieve content for admitted intents within the retrieved-token budget.
+     *
+     * @param array $admitted Admitted intents
+     * @param object $context Moodle context
+     * @return array{bundles: array, deferred: array}
+     */
+    private static function collect_intent_bundles(array $admitted, object $context): array {
+        $bundles = [];
+        $deferred = [];
+        $usedtokens = 0;
+        $budget = controller::MAX_RETRIEVED_TOKENS;
+
+        foreach ($admitted as $index => $intent) {
+            $intentclass = '\local_parce\local\intent\\' . $intent['type'];
+            $intentobj = new $intentclass($context, null, $intent['params']);
+            $status = 'ok';
+            $content = '';
+            $message = '';
+
+            try {
+                $content = $intentobj->get_content();
+                if ($content === '') {
+                    $status = 'empty';
+                }
+            } catch (\moodle_exception $e) {
+                if (in_array($e->errorcode, self::NOT_FOUND_ERRORS, true)) {
+                    $status = 'not_found';
+                    $message = $e->getMessage();
+                    $content = $message;
+                } else {
+                    throw $e;
+                }
+            }
+
+            $candidate = [
+                'type' => $intent['type'],
+                'params' => $intent['params'],
+                'resolvedquestion' => $intent['resolvedquestion'],
+                'require_ia' => !empty($intent['require_ia']),
+                'status' => $status,
+                'content' => $content,
+                'message' => $message,
+            ];
+            $tokens = controller::estimate_payload_tokens(self::format_intent_bundle($candidate));
+            if ($bundles !== [] && ($usedtokens + $tokens) > $budget) {
+                for ($i = $index; $i < count($admitted); $i++) {
+                    $deferred[] = $admitted[$i];
+                }
+                break;
+            }
+
+            $usedtokens += $tokens;
+            $bundles[] = $candidate;
+        }
+
+        return ['bundles' => $bundles, 'deferred' => $deferred];
+    }
+
+    /**
+     * Build CONTENT blocks for the answer model.
+     *
+     * @param array $bundles Intent bundles
+     * @return string Delimited intent content
+     */
+    private static function format_intent_bundles(array $bundles): string {
+        $parts = [];
+        foreach ($bundles as $bundle) {
+            $parts[] = self::format_intent_bundle($bundle);
+        }
+        return implode("\n", $parts);
+    }
+
+    /**
+     * Format one intent bundle for the answer payload.
+     *
+     * @param array $bundle Intent bundle
+     * @return string
+     */
+    private static function format_intent_bundle(array $bundle): string {
+        $type = preg_replace('/[^a-z_]/', '', (string) $bundle['type']);
+        $status = preg_replace('/[^a-z_]/', '', (string) $bundle['status']);
+        $resolved = str_replace(['"', '<', '>'], ["'", '', ''], (string) $bundle['resolvedquestion']);
+        return '<INTENT_START type="' . $type . '" status="' . $status . '" resolved="' . $resolved . '">'
+            . ($bundle['content'] ?? '')
+            . '<INTENT_END>';
+    }
+
+    /**
+     * Build the deferred-intents footer (#9).
+     *
+     * @param array $deferred Deferred intents
+     * @return string
+     */
+    private static function format_deferred_footer(array $deferred): string {
+        $labels = [];
+        foreach ($deferred as $item) {
+            $label = trim((string) ($item['resolvedquestion'] ?? ''));
+            if ($label === '') {
+                $label = (string) ($item['type'] ?? '');
+            }
+            if ($label !== '' && !in_array($label, $labels, true)) {
+                $labels[] = $label;
+            }
+        }
+        if ($labels === []) {
+            return '';
+        }
+        return get_string('deferred_intents_footer', 'local_parce', implode('; ', $labels));
     }
 
     /**
@@ -351,12 +737,11 @@ class question_handler {
                     return 'empty_response';
                 }
                 $decoded = json_decode($content, true);
-                if (json_last_error() !== JSON_ERROR_NONE) {
+                if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
                     return 'invalid_json';
                 }
-                $valid = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
-                return is_array($decoded) && isset($decoded['type']) && in_array($decoded['type'], $valid, true)
-                    ? 'success' : 'invalid_intent';
+                $normalised = self::normalise_planned_intents($decoded, '');
+                return $normalised === null ? 'invalid_intent' : 'success';
             }
         );
         if ($generation === null) {
@@ -375,32 +760,76 @@ class question_handler {
             return self::failure_response('error_no_content', 'planning_empty', true);
         }
 
-        $type = @json_decode($responsedata['generatedcontent'], true);
-        $intentavailable = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
-        if (empty($type) || !is_array($type) || empty($type['type']) || !in_array($type['type'], $intentavailable)) {
+        $decoded = json_decode($responsedata['generatedcontent'], true);
+        $normalised = self::normalise_planned_intents(is_array($decoded) ? $decoded : [], $planquestion);
+        if ($normalised === null) {
             return self::failure_response('error_processing_question', 'invalid_intent', true);
         }
 
-        $intentname = $type['type'];
-        $intentparams = $type['params'] ?? [];
-        if (!is_array($intentparams)) {
-            $intentparams = [$intentparams];
-        }
-
-        $resolvedquestion = trim((string) ($type['resolvedquestion'] ?? ''));
-        if ($resolvedquestion === '') {
-            $resolvedquestion = $planquestion;
-        }
-
-        $storedparams = $intentparams;
-        $storedparams['resolvedquestion'] = $resolvedquestion;
+        $storedparams = [
+            'intents' => $normalised['intents'],
+            'resolvedquestion' => $normalised['resolvedquestion'],
+        ];
+        $traceintent = count($normalised['intents']) === 1 ? $normalised['intents'][0]['type'] : 'multi';
         foreach (self::$lastcallids as $actionid) {
-            controller::update_ai_action($actionid, $intentname, $storedparams);
+            controller::update_ai_action($actionid, $traceintent, $storedparams);
         }
+
+        return $normalised;
+    }
+
+    /**
+     * Normalise planner JSON to an intents list (supports legacy single type).
+     *
+     * @param array $decoded Decoded planner JSON
+     * @param string $fallbackquestion Fallback when resolvedquestion is missing
+     * @return array{intents: array, resolvedquestion: string}|null
+     */
+    private static function normalise_planned_intents(array $decoded, string $fallbackquestion): ?array {
+        $rawintents = [];
+        if (isset($decoded['intents']) && is_array($decoded['intents'])) {
+            $rawintents = $decoded['intents'];
+        } else if (!empty($decoded['type'])) {
+            $rawintents = [$decoded];
+        } else {
+            return null;
+        }
+
+        $intents = [];
+        foreach ($rawintents as $item) {
+            if (!is_array($item) || empty($item['type']) || !in_array($item['type'], self::INTENT_TYPES, true)) {
+                return null;
+            }
+            $params = $item['params'] ?? [];
+            if (!is_array($params)) {
+                $params = [$params];
+            }
+            $resolved = trim((string) ($item['resolvedquestion'] ?? ''));
+            if ($resolved === '') {
+                $resolved = $fallbackquestion;
+            }
+            $intents[] = [
+                'type' => $item['type'],
+                'params' => $params,
+                'resolvedquestion' => $resolved,
+            ];
+            if (count($intents) >= self::MAX_PLAN_INTENTS) {
+                break;
+            }
+        }
+
+        if ($intents === []) {
+            return null;
+        }
+
+        $resolvedparts = array_values(array_filter(
+            array_map(static fn(array $intent): string => trim($intent['resolvedquestion']), $intents),
+            static fn(string $part): bool => $part !== ''
+        ));
+        $resolvedquestion = $resolvedparts === [] ? $fallbackquestion : implode(' | ', $resolvedparts);
 
         return [
-            'intentname' => $intentname,
-            'intentparams' => $intentparams,
+            'intents' => $intents,
             'resolvedquestion' => $resolvedquestion,
         ];
     }

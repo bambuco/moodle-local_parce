@@ -1391,4 +1391,164 @@ final class question_handler_test extends \advanced_testcase {
         $this->assertSame(2, $gateway->get_generate_calls());
         $this->assertFalse(\local_parce\local\question_handler::was_last_successful());
     }
+
+    /**
+     * Legacy single-object plans remain valid after the intents[] schema change.
+     */
+    public function test_legacy_single_intent_plan_still_works(): void {
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'greeting',
+                'params' => ['Hello from Parce'],
+                'resolvedquestion' => 'Greeting',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan], $provider);
+
+        $result = \local_parce\local\question_handler::process(
+            'Hi',
+            \context_system::instance(),
+            $gateway
+        );
+
+        $this->assertSame('Hello from Parce', $result);
+        $this->assertSame(1, $gateway->get_generate_calls());
+        $this->assertSame('Greeting', \local_parce\local\question_handler::get_last_resolved_question());
+    }
+
+    /**
+     * Multi-intent plans collect light data and ask the answer model once.
+     */
+    public function test_multi_intent_greeting_and_resource_unified_answer(): void {
+        $this->resetAfterTest();
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Introducción a Moodle']);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $assignment = $this->getDataGenerator()->create_module('assign', [
+            'course' => $course->id,
+            'name' => 'Tarea 1',
+        ]);
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'intents' => [
+                    [
+                        'type' => 'greeting',
+                        'params' => ['Hola'],
+                        'resolvedquestion' => 'Saludo',
+                    ],
+                    [
+                        'type' => 'resource',
+                        'params' => ['content' => [], 'resourcetype' => ['assign']],
+                        'resolvedquestion' => 'Qué tareas tengo',
+                    ],
+                ],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer->set_response_data([
+            'generatedcontent' => 'Hola. Tienes la Tarea 1.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $answer], $provider);
+
+        $question = 'Hola, qué tareas tengo';
+        $result = \local_parce\local\question_handler::process(
+            $question,
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertSame('Hola. Tienes la Tarea 1.', $result);
+        $this->assertSame(2, $gateway->get_generate_calls());
+        $this->assertStringContainsString('<INTENT_START type="greeting"', $gateway->get_prompt_texts()[1]);
+        $this->assertStringContainsString('<INTENT_START type="resource"', $gateway->get_prompt_texts()[1]);
+        $this->assertStringContainsString('Tarea 1', $gateway->get_prompt_texts()[1]);
+        $this->assertStringContainsString('/mod/assign/view.php?id=' . $assignment->cmid, $gateway->get_prompt_texts()[1]);
+        $this->assertStringContainsString(
+            '<QUESTION_START>' . $question . '<QUESTION_END>',
+            $gateway->get_prompt_texts()[1]
+        );
+        $this->assertSame('Saludo | Qué tareas tengo', \local_parce\local\question_handler::get_last_resolved_question());
+        $this->assertTrue(\local_parce\local\question_handler::was_last_successful());
+    }
+
+    /**
+     * Heavy intents beyond max_require_ia_intents are deferred with a #9 footer.
+     */
+    public function test_multi_intent_defers_extra_require_ia_intents(): void {
+        $this->resetAfterTest();
+        set_config('max_require_ia_intents', 1, 'local_parce');
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Curso multi']);
+        $student = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'intents' => [
+                    [
+                        'type' => 'course',
+                        'params' => ['scope' => 'overview'],
+                        'resolvedquestion' => 'Cómo se llama el curso',
+                    ],
+                    [
+                        'type' => 'grades',
+                        'params' => ['grades' => []],
+                        'resolvedquestion' => 'Cuáles son mis calificaciones',
+                    ],
+                ],
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $answer = new \local_parce\aiactions\responses\response_question_plan(true);
+        $answer->set_response_data([
+            'generatedcontent' => 'El curso se llama Curso multi.',
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan, $answer], $provider);
+
+        $result = \local_parce\local\question_handler::process(
+            'Cómo se llama el curso y cuáles son mis calificaciones',
+            \context_course::instance($course->id),
+            $gateway
+        );
+
+        $this->assertStringContainsString('El curso se llama Curso multi.', $result);
+        $this->assertStringContainsString(
+            get_string('deferred_intents_footer', 'local_parce', 'Cuáles son mis calificaciones'),
+            $result
+        );
+        $this->assertSame(2, $gateway->get_generate_calls());
+        $this->assertStringContainsString('<INTENT_START type="course"', $gateway->get_prompt_texts()[1]);
+        $this->assertStringNotContainsString('<INTENT_START type="grades"', $gateway->get_prompt_texts()[1]);
+    }
+
+    /**
+     * The max require_ia setting is clamped to the supported range.
+     */
+    public function test_get_max_require_ia_intents_defaults_and_clamps(): void {
+        $this->resetAfterTest();
+
+        unset_config('max_require_ia_intents', 'local_parce');
+        $this->assertSame(2, \local_parce\local\question_handler::get_max_require_ia_intents());
+
+        set_config('max_require_ia_intents', 3, 'local_parce');
+        $this->assertSame(3, \local_parce\local\question_handler::get_max_require_ia_intents());
+
+        set_config('max_require_ia_intents', 9, 'local_parce');
+        $this->assertSame(2, \local_parce\local\question_handler::get_max_require_ia_intents());
+
+        set_config('max_require_ia_intents', 0, 'local_parce');
+        $this->assertSame(2, \local_parce\local\question_handler::get_max_require_ia_intents());
+    }
 }

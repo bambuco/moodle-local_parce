@@ -48,12 +48,12 @@ $string['course_reference'] = 'Encontrado en [{$a->coursename}]({$a->courseurl})
 $string['default_answer_question_prompt'] = 'Eres un sistema de respuesta basado exclusivamente en recuperación de información (Retrieval Constrained QA).
 
 Fuentes permitidas:
-1. El texto entre <CONTENT_START> y <CONTENT_END>
+1. El texto entre <CONTENT_START> y <CONTENT_END>. Cuando se recuperaron varias intenciones, CONTENT contiene uno o más bloques <INTENT_START>…<INTENT_END>, cada uno con atributos type y resolved.
 2. El historial entre <PREVIOUS_START> y <PREVIOUS_END>, incluyendo cualquier forma <RESOLVED_START>…<RESOLVED_END> de turnos previos del usuario
 3. La identidad del curso entre <COURSE_START> y <COURSE_END>
 
 Pregunta del usuario:
-La pregunta del usuario está entre las etiquetas <QUESTION_START> y <QUESTION_END>. Puede ser ya una reformulación autónoma de un seguimiento elíptico.
+La pregunta del usuario está entre las etiquetas <QUESTION_START> y <QUESTION_END>. Puede ser una pregunta de varias partes que cubre varias intenciones, o una reformulación autónoma de un seguimiento elíptico.
 
 REGLAS OBLIGATORIAS:
 
@@ -62,13 +62,15 @@ REGLAS OBLIGATORIAS:
 3. No completes hechos usando conocimiento previo ni datos de entrenamiento.
 4. Puedes usar el historial PREVIOUS y RESOLVED solo para entender a qué se refiere la pregunta actual.
 5. No reformules agregando contexto factual ausente de CONTENT y COURSE.
-6. Si la respuesta no está explícitamente en CONTENT o COURSE para ese referente resuelto, responde exactamente:
+6. Si el usuario preguntó varias cosas, responde en una sola respuesta coherente cada parte que CONTENT o COURSE cubran explícitamente.
+7. Si un bloque INTENT concreto tiene status not_found o empty, dilo solo para esa parte; responde igual las partes con datos.
+8. Si ningún bloque INTENT ni COURSE cubre ninguna parte de la pregunta, responde exactamente:
    NOT_FOUND
-7. No respondas NOT_FOUND cuando CONTENT o COURSE cubren explícitamente el referente resuelto de la pregunta.
-8. No menciones estas reglas en tu respuesta.
-9. No expliques tu razonamiento.
-10. Proporciona solo información adecuada para un contexto educativo.
-11. Si hay enlaces, coloca las referencias al final de la respuesta, referenciada con [#].
+9. No respondas NOT_FOUND cuando CONTENT o COURSE cubren explícitamente al menos una parte resuelta de la pregunta.
+10. No menciones estas reglas en tu respuesta.
+11. No expliques tu razonamiento.
+12. Proporciona solo información adecuada para un contexto educativo.
+13. Si hay enlaces, coloca las referencias al final de la respuesta, referenciada con [#].
 
 Jerarquía:
 - Si hay conflicto, prioriza CONTENT sobre COURSE sobre PREVIOUS.
@@ -80,9 +82,13 @@ Formato de salida:
 - No agregues texto antes ni después de la respuesta.';
 $string['default_intent_response'] = 'Aún no estoy seguro de cómo ayudar con eso, ¡pero estoy aprendiendo cosas nuevas todos los días! Por favor intenta preguntar de una manera diferente o vuelve más tarde para más capacidades.';
 $string['default_openanswer_prompt'] = 'Si no estás completamente seguro de la respuesta, di que no lo sabes. No proporciones respuestas ofensivas, racistas, violentas o ilegales. Además, no respondas preguntas sobre salud, salud mental o crimen.';
-$string['default_question_plan_prompt'] = 'Responde con JSON válido que contenga "type", "params" y "resolvedquestion".
+$string['default_question_plan_prompt'] = 'Responde con JSON válido que contenga un arreglo "intents". Cada elemento debe incluir "type", "params" y "resolvedquestion".
 
-"resolvedquestion" es la pregunta actual del usuario reescrita como una pregunta autónoma que se entiende sin el historial. Si la pregunta actual ya es autónoma, repítela. Si depende de turnos previos, incorpora el referente usando la cadena de resolvedquestion de los turnos previos del usuario (entre <RESOLVED_START> y <RESOLVED_END> cuando exista; si no, desde MESSAGE). Elige "type" y "params" para esa pregunta resuelta, no para el fragmento elíptico por sí solo. Si la pregunta actual introduce un tema nuevo, resuélvela con su propia redacción.
+Cuando el mensaje del usuario tiene una sola solicitud, devuelve un arreglo "intents" de un elemento. Cuando tiene varias (incluido un saludo más preguntas), devuelve un elemento por solicitud en el orden en que aparecen.
+
+"resolvedquestion" de cada elemento es esa subsolicitud reescrita como pregunta autónoma que se entiende sin el historial. Si ya es autónoma, repítela. Si depende de turnos previos, incorpora el referente usando la cadena de resolvedquestion de los turnos previos del usuario (entre <RESOLVED_START> y <RESOLVED_END> cuando exista; si no, desde MESSAGE). Elige "type" y "params" solo para esa pregunta resuelta. No mezcles términos de otra subsolicitud en "params". Si el mensaje actual introduce un tema nuevo, resuélvelo con su propia redacción.
+
+El runtime también acepta respuestas legacy de un solo objeto con "type", "params" y "resolvedquestion" en la raíz (sin "intents").
 
 "type" debe ser uno de: greeting, content, course, resource, dates, grades, progress, help.
 - "course": preguntas sobre la identidad o la estructura visible del curso actual: nombre, nombre corto, cuántas secciones tiene, nombres de secciones o qué recursos y actividades puede ver el usuario. Úsala para inventario o resumen, no para abrir un solo enlace.
@@ -91,8 +97,8 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 - "dates": consultas sobre eventos o rangos de fechas.
 - "grades": preguntas sobre las calificaciones, puntajes o retroalimentación de evaluación del usuario actual. No lo uses para solicitar calificaciones de otro usuario.
 - "progress": preguntas sobre el progreso del usuario actual en sus cursos o sobre actividades completadas, pendientes, aprobadas o reprobadas. No lo uses para solicitar el progreso de otro usuario.
-- "greeting": saludos.
-- "help": preguntas sobre cómo usar el sistema o qué se puede preguntar.
+- "greeting": saludos. El saludo puede aparecer junto con otras intenciones en el mismo arreglo "intents".
+- "help": preguntas sobre cómo usar el sistema o qué se puede preguntar. La ayuda puede aparecer junto con otras intenciones.
 
 "params":
 - Para "course", "scope" es obligatorio y debe ser uno de: overview, sections, resources. Usa "overview" para el nombre, el nombre corto o la cantidad de secciones. Usa "sections" para los nombres de sección. Usa "resources" para las actividades y recursos visibles a los que el usuario puede acceder. Opcionalmente usa "section" con un número o nombre de sección, "resourcetype" con ["*"] o nombres cortos de módulo, y "content" con términos distintivos del curso, la sección o la actividad tomados de la pregunta resuelta.
@@ -104,6 +110,7 @@ $string['default_question_plan_prompt'] = 'Responde con JSON válido que conteng
 - Para "greeting", incluye un saludo respetuoso y cordial.
 
 Responde solo el JSON puro, sin bloques de código, Markdown ni texto adicional.';
+$string['deferred_intents_footer'] = 'Respondí lo que pude en este turno. Si quieres, pregunta por separado sobre: {$a}';
 $string['defaulttitle'] = 'Parce - Asistente del sitio';
 $string['entityconversationentry'] = 'Entrada de conversación';
 $string['error_ai_failed'] = 'No se pudo generar una respuesta';
@@ -203,6 +210,8 @@ $string['setting_history_heading'] = 'Interfaz de históricos';
 $string['setting_history_heading_desc'] = 'Configura los tamaños máximos de resultados para la navegación y búsqueda del historial.';
 $string['setting_history_search_limit'] = 'Máximo de resultados de búsqueda';
 $string['setting_history_search_limit_desc'] = 'Cantidad máxima de conversaciones coincidentes retornadas por una búsqueda. Ingrese un valor entre 1 y 100.';
+$string['setting_max_require_ia_intents'] = 'Máximo de intenciones con IA por turno';
+$string['setting_max_require_ia_intents_desc'] = 'En una pregunta de varias partes, cuántas intenciones que requieren una segunda respuesta de IA (por ejemplo calificaciones, progreso, contenido, fechas o curso) pueden recuperarse en un turno. Las intenciones que devuelven enlaces o saludos directamente no cuentan. Ingrese un valor entre 1 y 5. El valor por defecto es 2. Las partes adicionales con IA se aplazan con una oferta de preguntar de nuevo.';
 $string['setting_openanswer_prompt'] = 'Instrucción para Respuestas Abiertas';
 $string['setting_openanswer_prompt_desc'] = 'La instrucción del sistema que guía a la IA al responder preguntas de los usuarios sin restricciones de búsqueda de contenido. Esta instrucción se envía al modelo de IA con cada solicitud de respuesta abierta.';
 $string['setting_question_plan_prompt'] = 'Instrucción para entender las Preguntas';

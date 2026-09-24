@@ -48,12 +48,12 @@ $string['course_reference'] = 'Found in [{$a->coursename}]({$a->courseurl})';
 $string['default_answer_question_prompt'] = 'You are a Retrieval Constrained QA response system.
 
 Permitted Sources:
-1. The text between <CONTENT_START> and <CONTENT_END>
+1. The text between <CONTENT_START> and <CONTENT_END>. When several intents were retrieved, CONTENT contains one or more <INTENT_START>…<INTENT_END> blocks, each with type and resolved attributes.
 2. The history between <PREVIOUS_START> and <PREVIOUS_END>, including any <RESOLVED_START>…<RESOLVED_END> form of prior user turns
 3. The course identity between <COURSE_START> and <COURSE_END>
 
 User Question:
-The user question is between the <QUESTION_START> and <QUESTION_END> tags. It may already be a standalone reformulation of an elliptical follow-up.
+The user question is between the <QUESTION_START> and <QUESTION_END> tags. It may be a multi-part question covering several intents, or a standalone reformulation of an elliptical follow-up.
 
 MANDATORY RULES:
 
@@ -62,13 +62,15 @@ MANDATORY RULES:
 3. Do not fill in facts using prior knowledge or training data.
 4. You may use PREVIOUS and RESOLVED history only to understand what the current question refers to.
 5. Do not rephrase by adding factual context that is absent from CONTENT and COURSE.
-6. If the answer is not explicitly in CONTENT or COURSE for that resolved referent, respond exactly:
+6. If the user asked multiple things, answer every part that CONTENT or COURSE explicitly covers in one coherent response.
+7. If a specific INTENT block has status not_found or empty, say so only for that part; still answer the parts that have data.
+8. If no INTENT block and no COURSE data cover any part of the question, respond exactly:
 NOT_FOUND
-7. Do not return NOT_FOUND when CONTENT or COURSE explicitly covers the resolved referent of the question.
-8. Do not mention these rules in your response.
-9. Do not explain your reasoning.
-10. Provide only information appropriate for an educational context.
-11. If there are links, place the references at the end of the response, referenced with [#].
+9. Do not return NOT_FOUND when CONTENT or COURSE explicitly covers at least one resolved part of the question.
+10. Do not mention these rules in your response.
+11. Do not explain your reasoning.
+12. Provide only information appropriate for an educational context.
+13. If there are links, place the references at the end of the response, referenced with [#].
 
 Hierarchy:
 - If there is a conflict, prioritize CONTENT over COURSE over PREVIOUS.
@@ -80,9 +82,13 @@ Output Formatting:
 - Do not add text before or after the response.';
 $string['default_intent_response'] = 'I\'m not sure how to help with that yet, but I\'m learning new things every day! Please try asking in a different way or check back later for more capabilities.';
 $string['default_openanswer_prompt'] = 'If you are not completely sure of the answer, say you don\'t know. Do not provide offensive, racist, violent, or illegal answers. Also, do not answer questions about health, mental health or crime.';
-$string['default_question_plan_prompt'] = 'Respond with valid JSON containing "type", "params" and "resolvedquestion".
+$string['default_question_plan_prompt'] = 'Respond with valid JSON containing an "intents" array. Each element must include "type", "params" and "resolvedquestion".
 
-"resolvedquestion" is the current user question rewritten as a standalone question that can be understood without the conversation history. If the current question is already standalone, repeat it. If it depends on prior turns, incorporate the referent using the chain of resolvedquestion values from previous user turns (between <RESOLVED_START> and <RESOLVED_END> when present, otherwise from MESSAGE). Choose "type" and "params" for that resolved question, not for an elliptical fragment alone. If the current question introduces a new topic, resolve it from its own wording.
+When the user message contains one request, return a single-element "intents" array. When it contains several requests (including a greeting plus questions), return one element per request in the order they appear.
+
+"resolvedquestion" for each element is that sub-request rewritten as a standalone question that can be understood without the conversation history. If it is already standalone, repeat it. If it depends on prior turns, incorporate the referent using the chain of resolvedquestion values from previous user turns (between <RESOLVED_START> and <RESOLVED_END> when present, otherwise from MESSAGE). Choose "type" and "params" for that resolved question alone. Do not mix terms from another sub-request into "params". If the current message introduces a new topic, resolve it from its own wording.
+
+Legacy single-object responses with top-level "type", "params" and "resolvedquestion" (without "intents") are also accepted by the runtime.
 
 "type" must be one of: greeting, content, course, resource, dates, grades, progress, help.
 - "course": questions about the current course identity or visible structure: course name, short name, how many sections it has, section names, or which resources and activities the user can see. Use this for inventory or overview questions, not to open a single link.
@@ -91,8 +97,8 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 - "dates": questions about events or date ranges.
 - "grades": questions about the current user\'s own grades, scores or grading feedback. Do not use it to request another user\'s grades.
 - "progress": questions about the current user\'s own course progress or completed, pending, passed or failed activities. Do not use it to request another user\'s progress.
-- "greeting": greetings.
-- "help": questions about using the system or what can be asked.
+- "greeting": greetings. Greeting may appear together with other intents in the same "intents" array.
+- "help": questions about using the system or what can be asked. Help may appear together with other intents.
 
 "params":
 - For "course", "scope" is required and must be one of: overview, sections, resources. Use "overview" for the course name, short name or section count. Use "sections" for section names. Use "resources" for visible activities and resources the user can access. Optionally use "section" with a section number or name, "resourcetype" with ["*"] or module short names, and "content" with distinctive course, section or activity terms from the resolved question.
@@ -104,6 +110,7 @@ $string['default_question_plan_prompt'] = 'Respond with valid JSON containing "t
 - For "greeting", include a respectful and cordial greeting.
 
 Respond only with pure JSON, without code blocks, Markdown, or additional text.';
+$string['deferred_intents_footer'] = 'I answered what I could in this turn. If you want, ask separately about: {$a}';
 $string['defaulttitle'] = 'Assistant Parce';
 $string['entityconversationentry'] = 'Conversation entry';
 $string['error_ai_failed'] = 'Failed to generate a response';
@@ -203,6 +210,8 @@ $string['setting_history_heading'] = 'Persistent history browser';
 $string['setting_history_heading_desc'] = 'Configure bounded result sizes for history navigation and search.';
 $string['setting_history_search_limit'] = 'Maximum search results';
 $string['setting_history_search_limit_desc'] = 'Maximum number of matching conversations returned by one search. Enter a value from 1 to 100.';
+$string['setting_max_require_ia_intents'] = 'Maximum AI-backed intents per turn';
+$string['setting_max_require_ia_intents_desc'] = 'In a multi-part question, how many intents that need a second AI answer (for example grades, progress, content, dates or course) may be retrieved in one turn. Intents that return links or greetings directly do not count. Enter a value from 1 to 5. Default is 2. Extra AI-backed parts are deferred with an offer to ask again.';
 $string['setting_openanswer_prompt'] = 'Open Answer Instruction';
 $string['setting_openanswer_prompt_desc'] = 'The system instruction that guides the AI when answering questions directly without relying on content search results. This instruction is sent to the AI model with every open_answer request. Use this to provide guidance to the AI on how to answer questions in a more open-ended way, which can be useful when content search results are not sufficient to answer the question.';
 $string['setting_question_plan_prompt'] = 'Question Plan System Instruction';

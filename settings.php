@@ -122,6 +122,15 @@ if ($hassiteconfig) {
         '/^(?:[1-9][0-9]{0,3}|1[0-5][0-9]{3}|16000)$/'
     ));
 
+    // Maximum require_ia intents processed in one multi-question turn.
+    $settings->add(new admin_setting_configtext(
+        'local_parce/max_require_ia_intents',
+        get_string('setting_max_require_ia_intents', 'local_parce'),
+        get_string('setting_max_require_ia_intents_desc', 'local_parce'),
+        2,
+        '/^[1-5]$/'
+    ));
+
     // Persistent history browser limits.
     $settings->add(new admin_setting_heading(
         'local_parce/history_heading',

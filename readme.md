@@ -52,17 +52,20 @@ For the current development workspace, replacement of unsupported older builds i
 - Configure instructions for intent planning and answer generation.
 - Allow or deny open answers when retrieved content is unavailable.
 - Set active limits from 1 to 40 complete turns and from 1 to 16,000 estimated tokens. Invalid values are rejected.
+- Set how many AI-backed intents (`require_ia`) may be retrieved in one multi-part turn (1–5, default 2). Link-only and greeting intents do not consume that quota.
 - Bound the history browser to 1–100 contexts, conversations per context and search results.
 
 There is no cache TTL setting. The active conversation lifecycle is defined by the PHP session and the turn/token rollover limits.
 
 ## Intents and scope
 
-Except for the widget's exact static help command, Parce first asks the configured AI provider to classify each question. The planner returns one of the supported intents and the parameters used to retrieve or produce the response. Intents that return a direct response stop after planning; intents that need an answer based on retrieved data make a second AI call.
+Except for the widget's exact static help command, Parce first asks the configured AI provider to classify each question. The planner returns an `intents` array (or a legacy single `type` object, normalised to one element). Each element has the parameters used to retrieve or produce that part of the response.
 
-- `greeting`: returns the cordial greeting supplied by the planner, or the plugin's default greeting when none is supplied. It does not search Moodle or make a second AI call.
-- `help`: explains what can be asked. Its response is selected for the current system, course or activity-module context. The static help command reaches this intent without an AI planning call; an AI-classified help request stops after planning.
-- `resource`: handles explicit requests to find, show or access courses, activities and other Moodle resources. In course contexts the planner receives a compact catalogue of module short names used in that course, with a boolean indicating each component's `FEATURE_GRADE_HAS_GRADE` support. Its required `resourcetype` parameter accepts `core_course`, `*` for every catalogued module type, or selected short names such as `assign` and `lti`. Searches with distinctive terms use Moodle Search; requests without them list matching visible activities directly. It returns up to five links without asking AI to interpret their content.
+For a single intent that returns a direct response (`greeting`, `help`, `resource`), processing stops after retrieval. For a single intent that needs interpretation of retrieved data, PHP makes one answer AI call. For multiple intents in one user message, PHP retrieves every admitted intent, packs the results as labelled `<INTENT_START>` blocks, and makes **one** answer AI call so the model can draft a unified reply to the multi-part question. Intents with `require_ia` beyond the configured maximum are deferred: the response includes what was retrieved plus a short offer to ask about the remaining parts separately. Retrieved Search, Calendar, Grades or Progress data still share the independent 8,000-token budget across all bundles in the turn.
+
+- `greeting`: returns the cordial greeting supplied by the planner, or the plugin's default greeting when none is supplied. Alone it does not search Moodle or make a second AI call; with other intents it becomes part of the unified answer payload.
+- `help`: explains what can be asked. Its response is selected for the current system, course or activity-module context. The static help command reaches this intent without an AI planning call; an AI-classified help request alone stops after planning.
+- `resource`: handles explicit requests to find, show or access courses, activities and other Moodle resources. In course contexts the planner receives a compact catalogue of module short names used in that course, with a boolean indicating each component's `FEATURE_GRADE_HAS_GRADE` support. Its required `resourcetype` parameter accepts `core_course`, `*` for every catalogued module type, or selected short names such as `assign` and `lti`. Searches with distinctive terms use Moodle Search; requests without them list matching visible activities directly. Alone it returns up to five links without asking AI to interpret their content; in a multi-intent turn the links are passed into the unified answer call.
 - `course`: answers questions about the current course identity or visible structure. Every planning and answer payload includes a compact course card with context level, full name, short name and visible section count, plus the current activity when the chat is opened from a module. The card never lists section names or resources. When the planner selects this intent, PHP recovers additional visible structure with `get_fast_modinfo()` for the requesting user: `overview` returns course identity and section count, `sections` adds visible section names, and `resources` adds visible linkable activities. Optional planner parameters can filter by section, module type or distinctive terms. At site level, `overview` lists the user's active enrolled courses without expanding modules; `sections` and `resources` expand only when the terms identify a single course. Retrieved structure is sent to a second AI call. Example: **“¿Cómo se llama el curso y cuántas secciones tiene?”**
 - `content`: answers explanatory questions from Moodle Search content. It searches with the planner's subject terms, rejects insufficiently relevant matches, ranks the remaining results and sends at most five to a second AI call. Link-only results are returned directly instead. When nothing is found, the configured open-answer policy either permits an answer without retrieved Moodle content or returns a not-found response.
 - `dates`: answers questions about upcoming calendar events and deadlines. It reads visible events from now through the next 90 days, filters their names and descriptions with the planner's terms and sends at most ten matches to a second AI call. It is not a general calendar browser and does not retrieve past events or events beyond that window.
@@ -82,7 +85,11 @@ Search, calendar, course-structure, grade and progress retrieval always use the 
 
 ## In version
 
-- 2026092201: Include 'course' intent
+- 2026092300:
+    -- Multi-intent planning (`intents[]`), unified answer for multi-part questions, `max_require_ia_intents` setting
+
+- 2026092201:
+    -- Include 'course' intent
 
 ## License
 

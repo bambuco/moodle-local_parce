@@ -119,7 +119,7 @@ function xmldb_local_parce_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026080701, 'local', 'parce');
     }
 
-    if ($oldversion < 2026092201) {
+    if ($oldversion < 2026092300) {
         $planprompt = get_config('local_parce', 'question_plan_prompt');
         if (!empty($planprompt)) {
             set_config('question_plan_prompt', '', 'local_parce');
@@ -130,7 +130,11 @@ function xmldb_local_parce_upgrade($oldversion) {
             set_config('answer_question_prompt', '', 'local_parce');
         }
 
-        upgrade_plugin_savepoint(true, 2026092201, 'local', 'parce');
+        if (get_config('local_parce', 'max_require_ia_intents') === false) {
+            set_config('max_require_ia_intents', 2, 'local_parce');
+        }
+
+        upgrade_plugin_savepoint(true, 2026092300, 'local', 'parce');
     }
 
     return true;
