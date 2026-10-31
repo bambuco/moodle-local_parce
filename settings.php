@@ -75,6 +75,14 @@ if ($hassiteconfig) {
         0
     ));
 
+    // Words that add rank points without being required to keep a result.
+    $settings->add(new admin_setting_configtextarea(
+        'local_parce/supportwords',
+        get_string('setting_supportwords', 'local_parce'),
+        get_string('setting_supportwords_desc', 'local_parce'),
+        \local_parce\local\intent\content::DEFAULT_SUPPORT_WORDS
+    ));
+
     // AI Action System Instructions.
     $settings->add(new admin_setting_heading(
         'local_parce/ai_instructions_heading',

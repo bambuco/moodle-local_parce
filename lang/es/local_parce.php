@@ -240,5 +240,7 @@ $string['setting_openanswer_prompt'] = 'Instrucción para Respuestas Abiertas';
 $string['setting_openanswer_prompt_desc'] = 'La instrucción del sistema que guía a la IA al responder preguntas de los usuarios sin restricciones de búsqueda de contenido. Esta instrucción se envía al modelo de IA con cada solicitud de respuesta abierta.';
 $string['setting_question_plan_prompt'] = 'Instrucción para entender las Preguntas';
 $string['setting_question_plan_prompt_desc'] = 'La instrucción del sistema que guía a la IA al crear un plan o esquema estructurado para una pregunta o tema. Esta instrucción se envía al modelo de IA con cada solicitud de plan de preguntas.';
+$string['setting_supportwords'] = 'Palabras de apoyo';
+$string['setting_supportwords_desc'] = 'Palabras que por sí mismas no constituyen un objetivo de búsqueda, pero suman puntos al elegir los mejores resultados de contenido. Separe las palabras con comas. Se ignoran las entradas de menos de tres caracteres. Deje el campo vacío para restaurar la lista por defecto.';
 $string['static_help'] = 'ayuda';
 $string['yesterday'] = 'Ayer {$a}';

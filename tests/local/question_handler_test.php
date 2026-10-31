@@ -821,6 +821,45 @@ final class question_handler_test extends \advanced_testcase {
     }
 
     /**
+     * A support word adds rank points and does not discard a result that has the subject.
+     */
+    public function test_support_words_add_points_without_being_required(): void {
+        $method = new \ReflectionMethod(\local_parce\local\intent\content::class, 'get_search_keyword_score');
+        $keywords = ['ziruma', 'definición'];
+        $subjectonly = 'La Corporación Cultural y Artística Ziruma desarrolla una metodología.';
+        $supportonly = 'Esta página ofrece una definición general del curso.';
+        $both = 'Definición de Ziruma: es una corporación cultural y artística.';
+
+        $this->assertGreaterThan(0, $method->invoke(null, $subjectonly, $keywords));
+        $this->assertSame(0, $method->invoke(null, $supportonly, $keywords));
+        $this->assertGreaterThan(
+            $method->invoke(null, $subjectonly, $keywords),
+            $method->invoke(null, $both, $keywords)
+        );
+        $this->assertSame(2, $method->invoke(null, 'Información sobre gestión ambiental', ['Gestión ambiental']));
+        $this->assertGreaterThan(0, $method->invoke(null, $supportonly, ['definición']));
+        $this->assertSame(0, $method->invoke(null, $subjectonly, ['definición']));
+    }
+
+    /**
+     * The configured support list replaces the built-in one.
+     */
+    public function test_configured_support_words_replace_the_default_list(): void {
+        $this->resetAfterTest();
+        set_config('supportwords', 'pista', 'local_parce');
+        $method = new \ReflectionMethod(\local_parce\local\intent\content::class, 'get_search_keyword_score');
+        $zirumaonly = 'Ziruma es una corporación.';
+
+        // definición is a subject term in this list, so Ziruma alone is not enough.
+        $this->assertSame(0, $method->invoke(null, $zirumaonly, ['ziruma', 'definición']));
+        $this->assertGreaterThan(0, $method->invoke(null, $zirumaonly, ['ziruma', 'pista']));
+        $this->assertGreaterThan(
+            $method->invoke(null, $zirumaonly, ['ziruma', 'pista']),
+            $method->invoke(null, 'Una pista sobre Ziruma.', ['ziruma', 'pista'])
+        );
+    }
+
+    /**
      * A file hit without activity content is scored from the snippet Parce fetched, without highlight markers.
      */
     public function test_missing_content_uses_file_snippet_without_highlight_markers(): void {

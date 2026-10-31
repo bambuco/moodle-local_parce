@@ -47,6 +47,13 @@ class content extends base {
     /** Solr highlight marker placed after a matched term. */
     private const HIGHLIGHT_END = '@@HI_E@@';
 
+    /** Support words used when the site setting is empty. */
+    public const DEFAULT_SUPPORT_WORDS = 'definición, significado, concepto, explicación, descripción, resumen, '
+        . 'definition, meaning, concept, explanation, description, summary';
+
+    /** Shortest support word that is allowed to affect the score. */
+    private const MIN_SUPPORT_WORD_LENGTH = 3;
+
     /**
      * Get the content based on the parameters.
      *
@@ -293,6 +300,8 @@ class content extends base {
     /**
      * Score retrieved text by the number of planned terms it contains.
      *
+     * Support words add a point when present and do not raise the number of subject terms required.
+     *
      * @param string $text Retrieved title, content and descriptions.
      * @param array $keywords Search phrases supplied by the planner.
      * @return int Number of matching terms, or zero when the result is not sufficiently relevant.
@@ -309,16 +318,59 @@ class content extends base {
             return 1;
         }
 
+        $support = self::support_terms();
+        $subject = [];
+        foreach (array_keys($terms) as $term) {
+            if (!isset($support[$term])) {
+                $subject[$term] = true;
+            }
+        }
+        // A plan made only of support words keeps the previous requirement.
+        $counted = $subject === [] ? $terms : $subject;
+
         $text = \core_text::strtolower(\core_text::specialtoascii($text));
         $matches = 0;
-        foreach (array_keys($terms) as $term) {
+        foreach (array_keys($counted) as $term) {
             if (\core_text::strpos($text, $term) !== false) {
                 $matches++;
             }
         }
 
-        $required = count($terms) <= 2 ? count($terms) : (int) ceil(count($terms) / 2);
-        return $matches >= $required ? $matches : 0;
+        $required = count($counted) <= 2 ? count($counted) : (int) ceil(count($counted) / 2);
+        if ($matches < $required) {
+            return 0;
+        }
+
+        if ($subject !== []) {
+            foreach (array_keys($terms) as $term) {
+                if (isset($support[$term]) && \core_text::strpos($text, $term) !== false) {
+                    $matches++;
+                }
+            }
+        }
+        return $matches;
+    }
+
+    /**
+     * Read the configured support words, falling back to the built-in list.
+     *
+     * @return array<string, true> Folded support words of at least three characters.
+     */
+    private static function support_terms(): array {
+        $configured = get_config('local_parce', 'supportwords');
+        if (!is_string($configured) || trim($configured) === '') {
+            $configured = self::DEFAULT_SUPPORT_WORDS;
+        }
+
+        $terms = [];
+        $configured = \core_text::strtolower(\core_text::specialtoascii($configured));
+        foreach (preg_split('/[^\pL\pN]+/u', $configured, -1, PREG_SPLIT_NO_EMPTY) as $term) {
+            if (\core_text::strlen($term) < self::MIN_SUPPORT_WORD_LENGTH) {
+                continue;
+            }
+            $terms[$term] = true;
+        }
+        return $terms;
     }
 
     /**

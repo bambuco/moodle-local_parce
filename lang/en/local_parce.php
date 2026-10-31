@@ -240,5 +240,7 @@ $string['setting_openanswer_prompt'] = 'Open Answer Instruction';
 $string['setting_openanswer_prompt_desc'] = 'The system instruction that guides the AI when answering questions directly without relying on content search results. This instruction is sent to the AI model with every open_answer request. Use this to provide guidance to the AI on how to answer questions in a more open-ended way, which can be useful when content search results are not sufficient to answer the question.';
 $string['setting_question_plan_prompt'] = 'Question Plan System Instruction';
 $string['setting_question_plan_prompt_desc'] = 'The system instruction that guides the AI when creating a structured plan or outline for a question or topic. This instruction is sent to the AI model with every question_plan request.';
+$string['setting_supportwords'] = 'Support words';
+$string['setting_supportwords_desc'] = 'Words that are not a search target on their own, but add points when choosing the best content results. Separate words with commas. Entries shorter than three characters are ignored. Leave this empty to restore the default list.';
 $string['static_help'] = 'help';
 $string['yesterday'] = 'Yesterday {$a}';
