@@ -242,12 +242,14 @@ final class question_handler_test extends \advanced_testcase {
      * @return array
      */
     public static function invalid_planning_response_provider(): array {
+        // phpcs:disable
         return [
             'empty response' => [null, 'planning_empty', 'empty_response'],
             'invalid JSON' => ['not-json', 'invalid_intent', 'invalid_json'],
             'fenced non-json' => ["```json\nnot-json\n```", 'invalid_intent', 'invalid_json'],
             'unknown intent' => [json_encode(['type' => 'unknown']), 'invalid_intent', 'invalid_intent'],
         ];
+        // phpcs:enable
     }
 
     /**
@@ -293,6 +295,7 @@ final class question_handler_test extends \advanced_testcase {
             'resolvedquestion' => 'Question',
         ]]);
 
+        // phpcs:disable
         return [
             'json fence' => ["```json\n" . $plan . "\n```"],
             'prose around object' => ["Plan:\n" . $plan . "\nEnd."],
@@ -300,6 +303,7 @@ final class question_handler_test extends \advanced_testcase {
             'double encoded' => [json_encode($plan)],
             'root array' => [$list],
         ];
+        // phpcs:enable
     }
 
     /**
@@ -850,7 +854,7 @@ final class question_handler_test extends \advanced_testcase {
         $method = new \ReflectionMethod(\local_parce\local\intent\content::class, 'get_search_keyword_score');
         $zirumaonly = 'Ziruma es una corporación.';
 
-        // definición is a subject term in this list, so Ziruma alone is not enough.
+        // Word "definición" is a subject term in this list, so Ziruma alone is not enough.
         $this->assertSame(0, $method->invoke(null, $zirumaonly, ['ziruma', 'definición']));
         $this->assertGreaterThan(0, $method->invoke(null, $zirumaonly, ['ziruma', 'pista']));
         $this->assertGreaterThan(

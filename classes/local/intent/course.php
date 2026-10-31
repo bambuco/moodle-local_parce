@@ -86,10 +86,8 @@ class course extends base {
                     ) {
                         continue;
                     }
-                    if (!$this->matches_keywords(
-                        format_string($cm->name, true, ['context' => $cm->context]),
-                        $keywords
-                    )) {
+
+                    if (!$this->matches_keywords(format_string($cm->name, true, ['context' => $cm->context]), $keywords)) {
                         continue;
                     }
                     $sectionresources[] = (object) [
@@ -108,7 +106,9 @@ class course extends base {
                         'name' => get_section_name($course, $section),
                         'resourcecount' => count($sectionresources),
                     ];
-                    $summary = trim(content_to_text((string) ($section->summary ?? ''), (int) ($section->summaryformat ?? FORMAT_HTML)));
+                    $summary = trim(
+                        content_to_text((string) ($section->summary ?? ''), (int) ($section->summaryformat ?? FORMAT_HTML))
+                    );
                     if ($summary !== '') {
                         $sectionrecord->content = $summary;
                     }

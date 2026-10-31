@@ -517,6 +517,9 @@ class controller
      * @param string $question The user's question
      * @param string $response The system's response
      * @param int[] $actionids AI action records to link atomically
+     * @param int|null $cacheversion Expected global cache version
+     * @param bool $persist Whether to write the durable database turn
+     * @param string $resolvedquestion Standalone form of the question for later prompts
      * @return int The ID of the inserted conversation entry record
      */
     public static function store_conversation(
@@ -699,6 +702,10 @@ class controller
      * Retrieved Search and Calendar values are untrusted data, never instructions.
      * Content is Unicode-safely shortened first; whole trailing items are then
      * discarded if structural data alone exceeds the budget.
+     *
+     * @param array $items The items to encode
+     * @param int $tokenbudget The token budget
+     * @return string The encoded items
      */
     public static function encode_retrieved_items(array $items, int $tokenbudget = self::MAX_RETRIEVED_TOKENS): string {
         $items = array_values($items);
@@ -946,6 +953,13 @@ class controller
     /**
      * Open an AI call trace before provider resolution.
      *
+     * @param int $userid The user ID
+     * @param int $contextid The Moodle context ID
+     * @param int $chatid The chat context identifier
+     * @param string $conversationkey The conversation session key
+     * @param string $requestid The request ID
+     * @param string $callid The call ID
+     * @param string $actiontype The type of AI call (question_plan or answer_question)
      * @return int New trace ID
      */
     public static function start_ai_action(
@@ -1081,6 +1095,8 @@ class controller
      * @param string $prompt The system instruction prompt
      * @param string $prompttext The full hackquestion text sent to the AI
      * @param \core_ai\aiactions\responses\response_base $response The AI response object
+     * @param string|null $provider The provider component name
+     * @param int|null $timecreated The timestamp of the action creation
      * @return int The ID of the inserted ai_actions record
      */
     public static function log_ai_action(

@@ -25,16 +25,16 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
     'use strict';
 
     const text = {
-        chat_error: 'chat_error',
-        chat_error_processing: 'chat_error_processing'
+        chaterror: 'chat_error',
+        chaterrorprocessing: 'chat_error_processing'
     };
 
     Str.getStrings([
         {key: 'chat_error', component: 'local_parce'},
         {key: 'chat_error_processing', component: 'local_parce'}
     ]).then(function(strings) {
-        text.chat_error = strings[0];
-        text.chat_error_processing = strings[1];
+        text.chaterror = strings[0];
+        text.chaterrorprocessing = strings[1];
         return strings;
     }).catch(function(error) {
         Log.debug('Parce: error strings could not be loaded', error);
@@ -98,13 +98,13 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
                     if (response.newconversation) {
                         ChatUI.startNewConversation(pending.userNode);
                     }
-                    ChatUI.addMessage(response.answer || text.chat_error_processing, 'system');
+                    ChatUI.addMessage(response.answer || text.chaterrorprocessing, 'system');
                     this.pending = null;
                     return true;
                 }
 
                 ChatUI.showOperationError(
-                    response.answer || text.chat_error_processing,
+                    response.answer || text.chaterrorprocessing,
                     response.status,
                     response.retryable,
                     () => this.retryPending()
@@ -116,7 +116,7 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
             }).catch((error) => {
                 ChatUI.hideLoading();
                 if (pending.userNode) {
-                    ChatUI.showOperationError(text.chat_error, 'error', true, () => this.retryPending());
+                    ChatUI.showOperationError(text.chaterror, 'error', true, () => this.retryPending());
                 } else {
                     ChatUI.showStatus('error', ChatUI.getText('historyerror'), () => this.retryPending());
                 }

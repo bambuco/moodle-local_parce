@@ -42,18 +42,24 @@ class question_handler {
     public const MAX_PLAN_INTENTS = 8;
 
     /**
-     * Default and bounds for max_require_ia_intents.
+     * @var int Default value for max_require_ia_intents.
      */
     public const DEFAULT_MAX_REQUIRE_IA = 2;
+
+    /**
+     * @var int Minimum value for max_require_ia_intents.
+     */
     public const MIN_MAX_REQUIRE_IA = 1;
+
+    /**
+     * @var int Maximum value for max_require_ia_intents.
+     */
     public const MAX_MAX_REQUIRE_IA = 5;
 
     /**
      * Intent types accepted from the planner.
      */
-    private const INTENT_TYPES = [
-        'base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource',
-    ];
+    private const INTENT_TYPES = ['base', 'content', 'course', 'dates', 'grades', 'greeting', 'help', 'progress', 'resource'];
 
     /**
      * Error codes that mean retrieval found nothing for an intent.
@@ -313,7 +319,22 @@ class question_handler {
     /**
      * Handle a single planned intent using the legacy return rules.
      *
-     * @param array $bundle Collected bundle for the intent
+     * @param ai_gateway $gateway The AI gateway
+     * @param object $context The Moodle context
+     * @param int $userid The user ID
+     * @param int $chatid The chat context identifier
+     * @param string $conversationkey The conversation session key
+     * @param string $requestid The request ID
+     * @param string $answerprompt The answer prompt
+     * @param string $resolvedquestion The resolved question text
+     * @param array $previous The previous conversation context
+     * @param string $coursecard The course card
+     * @param int $cacheversion Expected global cache version
+     * @param array $bundle The collected bundle for the intent
+     * @param bool $allowretry Whether to allow retry
+     * @param bool $retried Whether the question has been retried
+     * @param string $planquestion The question text sent to the planner
+     * @param string $question The user's question
      * @return string|array Display string, or retry directive
      */
     private static function process_single_intent_response(
@@ -339,7 +360,11 @@ class question_handler {
         $content = $bundle['content'];
 
         if ($bundle['status'] === 'not_found') {
-            return self::success_response($question, $bundle['message'] !== '' ? $bundle['message'] : get_string('msg_no_content', 'local_parce'), false);
+            return self::success_response(
+                $question,
+                $bundle['message'] !== '' ? $bundle['message'] : get_string('msg_no_content', 'local_parce'),
+                false
+            );
         }
 
         if (!$bundle['require_ia']) {
@@ -406,8 +431,19 @@ class question_handler {
     /**
      * Collect data for several intents and ask the answer model once.
      *
+     * @param ai_gateway $gateway The AI gateway
+     * @param object $context The Moodle context
+     * @param int $userid The user ID
+     * @param int $chatid The chat context identifier
+     * @param string $conversationkey The conversation session key
+     * @param string $requestid The request ID
+     * @param string $answerprompt The answer prompt
+     * @param string $question The user's question
      * @param array $bundles Retrieved intent bundles
      * @param array $deferred Deferred intent descriptors
+     * @param bool $allowretry Whether to allow retry
+     * @param bool $retried Whether the question has been retried
+     * @param string $planquestion The question text sent to the planner
      * @return string|array Display string, or retry directive
      */
     private static function process_multi_intent_response(
@@ -463,7 +499,7 @@ class question_handler {
         }
 
         $traceparams = [
-            'intents' => array_map(static function(array $bundle): array {
+            'intents' => array_map(static function (array $bundle): array {
                 return [
                     'type' => $bundle['type'],
                     'params' => $bundle['params'],
@@ -472,7 +508,7 @@ class question_handler {
                     'require_ia' => $bundle['require_ia'],
                 ];
             }, $bundles),
-            'deferred' => array_map(static function(array $item): array {
+            'deferred' => array_map(static function (array $item): array {
                 return [
                     'type' => $item['type'],
                     'resolvedquestion' => $item['resolvedquestion'],
@@ -1117,6 +1153,18 @@ class question_handler {
     /**
      * Execute one logical AI call with a trace that is closed on every path.
      *
+     * @param ai_gateway $gateway The AI gateway
+     * @param object $action The AI action
+     * @param int $userid The user ID
+     * @param int $contextid The Moodle context ID
+     * @param int $chatid The chat context identifier
+     * @param string $conversationkey The conversation session key
+     * @param string $requestid The request ID
+     * @param string $actiontype The type of AI call (question_plan or answer_question)
+     * @param string $prompt The system instruction prompt
+     * @param string $prompttext The full hackquestion text sent to the AI
+     * @param int $cacheversion Expected global cache version
+     * @param callable $classify A function to classify the response
      * @return array|null Gateway result, or null when no provider is available
      */
     private static function traced_generate(
