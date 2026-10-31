@@ -32,7 +32,16 @@ $ADMIN->add('reports', new admin_externalpage(
 ));
 
 if ($hassiteconfig) {
-    $settings = new admin_settingpage('local_parce', get_string('pluginname', 'local_parce'));
+    $ADMIN->add('localplugins', new admin_category(
+        'local_parce_folder',
+        new lang_string('pluginname', 'local_parce')
+    ));
+
+    $settings = new admin_settingpage(
+        'local_parce_general',
+        new lang_string('general')
+    );
+    $ADMIN->add('local_parce_folder', $settings);
 
     // Enable/disable the chat widget.
     $settings->add(new admin_setting_configcheckbox(
@@ -55,6 +64,14 @@ if ($hassiteconfig) {
         'local_parce/enable_guests',
         get_string('setting_enable_guests', 'local_parce'),
         get_string('setting_enable_guests_desc', 'local_parce'),
+        0
+    ));
+
+    // Read stored file text while answering.
+    $settings->add(new admin_setting_configcheckbox(
+        'local_parce/filecontent',
+        get_string('setting_filecontent', 'local_parce'),
+        get_string('setting_filecontent_desc', 'local_parce'),
         0
     ));
 
@@ -160,5 +177,12 @@ if ($hassiteconfig) {
         $historylimitvalidation
     ));
 
-    $ADMIN->add('localplugins', $settings);
+    if (\local_parce\local\search\file_content_schema::is_solr_configured()) {
+        $ADMIN->add('local_parce_folder', new admin_externalpage(
+            'local_parce_filecontent',
+            get_string('filecontent_page', 'local_parce'),
+            new moodle_url('/local/parce/filecontent.php'),
+            'moodle/site:config'
+        ));
+    }
 }

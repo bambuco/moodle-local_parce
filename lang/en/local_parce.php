@@ -110,8 +110,8 @@ Legacy single-object responses with top-level "type", "params" and "resolvedques
 - For "greeting", include a respectful and cordial greeting.
 
 Respond only with pure JSON, without code blocks, Markdown, or additional text.';
-$string['deferred_intents_footer'] = 'I answered what I could in this turn. If you want, ask separately about: {$a}';
 $string['defaulttitle'] = 'Assistant Parce';
+$string['deferred_intents_footer'] = 'I answered what I could in this turn. If you want, ask separately about: {$a}';
 $string['entityconversationentry'] = 'Conversation entry';
 $string['error_ai_failed'] = 'Failed to generate a response';
 $string['error_ai_unavailable'] = 'AI service is not available at this moment.';
@@ -123,6 +123,28 @@ $string['error_question_too_long'] = 'The question is too long. The maximum leng
 $string['error_rate_limited'] = 'Too many AI requests have been made. Please try again later.';
 $string['error_search_unavailable'] = 'Content search functionality is currently unavailable.';
 $string['eventconversationhistoryviewed'] = 'Conversation history viewed';
+$string['filecontent_check'] = 'Check schema';
+$string['filecontent_copy_missing'] = 'The copy from indexed file text to the stored field is missing.';
+$string['filecontent_copy_ok'] = 'The copy from indexed file text to the stored field is present.';
+$string['filecontent_documents_empty'] = 'The schema is ready. No indexed document stores file text yet. New or reindexed files will fill it.';
+$string['filecontent_documents_ready'] = '{$a} indexed documents already store file text.';
+$string['filecontent_documents_unknown'] = 'The schema is ready, but Parce could not confirm that a document stores file text.';
+$string['filecontent_error'] = 'Solr returned an error: {$a}';
+$string['filecontent_field_missing'] = 'The stored field parce_filecontent is missing or does not match the expected definition.';
+$string['filecontent_field_ok'] = 'The stored field parce_filecontent exists and matches the expected definition.';
+$string['filecontent_fileindexing_off'] = 'File indexing is disabled. Moodle will not send files to Solr, so the stored copy stays empty.';
+$string['filecontent_page'] = 'File text';
+$string['filecontent_prepare'] = 'Prepare schema';
+$string['filecontent_prepared'] = 'The Solr schema was prepared.';
+$string['filecontent_solr_required'] = 'These actions are available only when Solr is the search engine and its server and index are configured.';
+$string['filecontent_steps'] = '<p>Preparing the schema does not reindex the site. After the check reports that the field and the copy are in place:</p>
+<ol>
+<li>Turn on file indexing if it is off. Open <a href="{$a->fileindexing}">the administration search for file indexing</a>. Without it, Moodle does not send files to Solr and the stored copy receives no text.</li>
+<li>For files that are already indexed, open <a href="{$a->searchareas}">search areas</a> and choose "Delete all indexed contents". "Reindex all site contents" walks the site, but Solr skips a file whose name, date and content hash have not changed, so it does not extract that file again. Deleting the index is optional: new and modified documents receive the copy the next time they are indexed, and older files keep no stored text until they are reindexed.</li>
+<li>Let the scheduled task "Global search indexing" run, or choose "Update indexed contents" on the search areas page. After a delete, global search stays empty until indexing catches up.</li>
+</ol>
+<p>You can enable file search in Parce as soon as the schema check succeeds. File text appears in answers as indexing extracts each file again.</p>';
+$string['filecontent_unreachable'] = 'Parce could not reach Solr to check the schema.';
 $string['historyadminlink'] = 'Parce conversation history';
 $string['historyback'] = 'Back to the previous history level';
 $string['historybreadcrumb'] = 'Conversation history navigation';
@@ -202,6 +224,8 @@ $string['setting_enable_guests'] = 'Enable for Guest Users';
 $string['setting_enable_guests_desc'] = 'Allow guest users to access the chat widget';
 $string['setting_enabled'] = 'Enable Parce Chat Widget';
 $string['setting_enabled_desc'] = 'When enabled, the floating chat widget will appear on all pages for logged-in users';
+$string['setting_filecontent'] = 'Search file contents';
+$string['setting_filecontent_desc'] = 'When enabled, Parce reads stored file text from Solr while answering content questions. Preparing the schema does not by itself index existing files.';
 $string['setting_history_context_limit'] = 'Maximum history contexts';
 $string['setting_history_context_limit_desc'] = 'Maximum number of contexts shown in the history browser. Enter a value from 1 to 100.';
 $string['setting_history_conversation_limit'] = 'Maximum conversations per context';

@@ -110,8 +110,8 @@ El runtime también acepta respuestas legacy de un solo objeto con "type", "para
 - Para "greeting", incluye un saludo respetuoso y cordial.
 
 Responde solo el JSON puro, sin bloques de código, Markdown ni texto adicional.';
-$string['deferred_intents_footer'] = 'Respondí lo que pude en este turno. Si quieres, pregunta por separado sobre: {$a}';
 $string['defaulttitle'] = 'Parce - Asistente del sitio';
+$string['deferred_intents_footer'] = 'Respondí lo que pude en este turno. Si quieres, pregunta por separado sobre: {$a}';
 $string['entityconversationentry'] = 'Entrada de conversación';
 $string['error_ai_failed'] = 'No se pudo generar una respuesta';
 $string['error_ai_unavailable'] = 'El servicio de IA no está disponible en este momento.';
@@ -123,6 +123,28 @@ $string['error_question_too_long'] = 'La pregunta es demasiado larga. La longitu
 $string['error_rate_limited'] = 'Se han realizado demasiadas solicitudes de IA. Intenta de nuevo más tarde.';
 $string['error_search_unavailable'] = 'La funcionalidad de búsqueda de contenido no está disponible actualmente.';
 $string['eventconversationhistoryviewed'] = 'Historial de conversación consultado';
+$string['filecontent_check'] = 'Comprobar esquema';
+$string['filecontent_copy_missing'] = 'Falta la copia del texto indexado de los archivos hacia el campo almacenado.';
+$string['filecontent_copy_ok'] = 'La copia del texto indexado de los archivos hacia el campo almacenado está presente.';
+$string['filecontent_documents_empty'] = 'El esquema está listo. Ningún documento indexado guarda todavía el texto del fichero. Los archivos nuevos o reindexados lo llenarán.';
+$string['filecontent_documents_ready'] = '{$a} documentos indexados ya guardan texto de fichero.';
+$string['filecontent_documents_unknown'] = 'El esquema está listo, pero Parce no pudo confirmar que un documento guarde el texto del archivo.';
+$string['filecontent_error'] = 'Solr devolvió un error: {$a}';
+$string['filecontent_field_missing'] = 'El campo almacenado parce_filecontent no existe o no coincide con la definición esperada.';
+$string['filecontent_field_ok'] = 'El campo almacenado parce_filecontent existe y coincide con la definición esperada.';
+$string['filecontent_fileindexing_off'] = 'El indexado de archivos está desactivado. Moodle no enviará archivos a Solr, así que la copia almacenada seguirá vacía.';
+$string['filecontent_page'] = 'Texto de archivos';
+$string['filecontent_prepare'] = 'Preparar esquema';
+$string['filecontent_prepared'] = 'El esquema de Solr quedó preparado.';
+$string['filecontent_solr_required'] = 'Estas acciones están disponibles solo cuando Solr es el motor de búsqueda y su servidor e índice están configurados.';
+$string['filecontent_steps'] = '<p>Preparar el esquema no reindexa el sitio. Cuando la comprobación indique que el campo y la copia están listos:</p>
+<ol>
+<li>Active el indexado de archivos si está apagado. Abra <a href="{$a->fileindexing}">la búsqueda de administración de fileindexing</a>. Sin eso, Moodle no envía archivos a Solr y la copia almacenada no recibe texto.</li>
+<li>Para los archivos que ya están indexados, abra <a href="{$a->searchareas}">las áreas de búsqueda</a> y elija «Borrar todos los contenidos indexados». «Indexar de nuevo todos los contenidos del sitio» recorre el sitio, pero Solr omite un fichero cuyo nombre, fecha y hash de contenido no cambiaron, así que no lo vuelve a extraer. Borrar el índice es opcional: los documentos nuevos o modificados reciben la copia en el siguiente indexado, y los antiguos siguen sin texto almacenado hasta que se reindexen.</li>
+<li>Deje que corra la tarea programada «Indexación de búsqueda global», o elija «Actualizar contenidos indexados» en la página de áreas de búsqueda. Después de un borrado, la búsqueda global queda vacía hasta que el indexado avance.</li>
+</ol>
+<p>Puede activar la búsqueda en archivos de Parce en cuanto la comprobación del esquema tenga éxito. El texto de los archivos aparece en las respuestas a medida que el indexado vuelve a extraer cada fichero.</p>';
+$string['filecontent_unreachable'] = 'Parce no pudo conectar con Solr para comprobar el esquema.';
 $string['historyadminlink'] = 'Historial de conversaciones de Parce';
 $string['historyback'] = 'Volver al nivel anterior del historial';
 $string['historybreadcrumb'] = 'Navegación del historial de conversaciones';
@@ -202,6 +224,8 @@ $string['setting_enable_guests'] = 'Habilitar para Usuarios Invitados';
 $string['setting_enable_guests_desc'] = 'Permitir que los usuarios invitados accedan al widget de chat';
 $string['setting_enabled'] = 'Habilitar Widget de Chat Parce';
 $string['setting_enabled_desc'] = 'Cuando está habilitado, el widget de chat flotante aparecerá en todas las páginas para usuarios registrados';
+$string['setting_filecontent'] = 'Buscar en el contenido de los archivos';
+$string['setting_filecontent_desc'] = 'Cuando está activado, Parce lee el texto de archivos almacenado en Solr al responder preguntas de contenido. Preparar el esquema no indexa por sí solo los archivos que ya existen.';
 $string['setting_history_context_limit'] = 'Máximo de contextos del historial';
 $string['setting_history_context_limit_desc'] = 'Cantidad máxima de contextos mostrados en el historial. Ingrese un valor entre 1 y 100.';
 $string['setting_history_conversation_limit'] = 'Máximo de conversaciones por contexto';

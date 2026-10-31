@@ -245,7 +245,60 @@ final class question_handler_test extends \advanced_testcase {
         return [
             'empty response' => [null, 'planning_empty', 'empty_response'],
             'invalid JSON' => ['not-json', 'invalid_intent', 'invalid_json'],
+            'fenced non-json' => ["```json\nnot-json\n```", 'invalid_intent', 'invalid_json'],
             'unknown intent' => [json_encode(['type' => 'unknown']), 'invalid_intent', 'invalid_intent'],
+        ];
+    }
+
+    /**
+     * Planner JSON wrapped in extra text is accepted and traced as a success.
+     *
+     * @param string $content Generated planning content
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('recoverable_planning_format_provider')]
+    public function test_recoverable_planning_formats(string $content): void {
+        global $DB;
+
+        $this->resetAfterTest();
+        $this->setUser($this->getDataGenerator()->create_user());
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $response = new \local_parce\aiactions\responses\response_question_plan(true);
+        $response->set_response_data(['generatedcontent' => $content, 'model' => 'fake-model']);
+        $gateway = new test_ai_gateway([$response], $provider);
+
+        \local_parce\local\question_handler::process('Question', \context_system::instance(), $gateway);
+        $result = \local_parce\local\question_handler::get_last_result();
+
+        $this->assertSame('success', $result['status']);
+        $this->assertTrue(\local_parce\local\question_handler::was_last_successful());
+        $this->assertSame(1, $gateway->get_generate_calls());
+        $trace = $DB->get_record('local_parce_ai_actions', [], '*', MUST_EXIST);
+        $this->assertSame('success', $trace->outcome);
+    }
+
+    /**
+     * Planning responses whose JSON can be recovered from surrounding text.
+     *
+     * @return array
+     */
+    public static function recoverable_planning_format_provider(): array {
+        $plan = json_encode([
+            'type' => 'base',
+            'params' => [],
+            'resolvedquestion' => 'Question',
+        ]);
+        $list = json_encode([[
+            'type' => 'base',
+            'params' => [],
+            'resolvedquestion' => 'Question',
+        ]]);
+
+        return [
+            'json fence' => ["```json\n" . $plan . "\n```"],
+            'prose around object' => ["Plan:\n" . $plan . "\nEnd."],
+            'loose brace before plan' => ["Nota {ver arriba}\n" . $plan . "\nEjemplo: {\"type\":\"unknown\"}"],
+            'double encoded' => [json_encode($plan)],
+            'root array' => [$list],
         ];
     }
 
@@ -765,6 +818,73 @@ final class question_handler_test extends \advanced_testcase {
             $method->invoke(null, $text, ['ventajas redes sociales']),
             $method->invoke(null, 'Las ventajas de las redes sociales incluyen comunicación.', ['ventajas redes sociales'])
         );
+    }
+
+    /**
+     * A file hit without activity content is scored from the snippet Parce fetched, without highlight markers.
+     */
+    public function test_missing_content_uses_file_snippet_without_highlight_markers(): void {
+        $document = new \core_search\document(1, 'mod_resource', 'activity');
+        $document->set('title', 'Zoho');
+        $snippet = 'Los @@HI_S@@códigos@@HI_E@@ de @@HI_S@@tipificación@@HI_E@@ clasifican los casos.';
+        $extract = new \ReflectionMethod(\local_parce\local\intent\content::class, 'get_result_text');
+        $score = new \ReflectionMethod(\local_parce\local\intent\content::class, 'get_search_keyword_score');
+
+        $text = $extract->invoke(null, $document, $snippet);
+        $withoutsnippet = $extract->invoke(null, $document, '');
+
+        $this->assertSame('', $withoutsnippet['content']);
+        $this->assertStringNotContainsString('@@HI_S@@', $text['content']);
+        $this->assertStringNotContainsString('@@HI_E@@', $text['content']);
+        $this->assertStringContainsString('códigos de tipificación', $text['content']);
+        $this->assertGreaterThan(0, $score->invoke(null, $text['searchable'], ['códigos de tipificación']));
+        $this->assertSame(0, $score->invoke(null, $text['title'], ['códigos de tipificación']));
+    }
+
+    /**
+     * File snippet requests name the documents already returned and do not search by the user phrase.
+     */
+    public function test_file_snippet_request_selects_known_ids_only(): void {
+        $reader = \local_parce\local\search\file_snippet_reader::class;
+        $parentid = 'mod_resource-activity-12';
+        $fileid = $reader::file_document_id($parentid, 34);
+
+        $this->assertSame($parentid . '-solrfile34', $fileid);
+
+        $params = $reader::select_params([$fileid, $reader::file_document_id($parentid, 35)], 'códigos de tipificación');
+
+        $this->assertSame('id:("' . $parentid . '-solrfile34" OR "' . $parentid . '-solrfile35")', $params['q']);
+        $this->assertSame('códigos de tipificación', $params['hl.q']);
+        $this->assertSame(\local_parce\local\search\file_content_schema::FIELD_NAME, $params['hl.fl']);
+        $this->assertStringNotContainsString('códigos', $params['q']);
+        $this->assertArrayNotHasKey('q.alt', $params);
+
+        $field = \local_parce\local\search\file_content_schema::FIELD_NAME;
+        $snippets = $reader::snippets_by_parent([
+            $fileid => [$field => ['Los @@HI_S@@códigos@@HI_E@@']],
+            $reader::file_document_id($parentid, 35) => [$field => ['de tipificación']],
+            'other-document' => [$field => ['ignored']],
+        ], [
+            $fileid => $parentid,
+            $reader::file_document_id($parentid, 35) => $parentid,
+        ]);
+
+        $this->assertSame("Los @@HI_S@@códigos@@HI_E@@\nde tipificación", $snippets[$parentid]);
+        $this->assertArrayNotHasKey('other-document', $snippets);
+    }
+
+    /**
+     * File snippets are not requested unless the site has enabled file content.
+     */
+    public function test_file_snippets_are_skipped_when_file_content_is_disabled(): void {
+        $this->resetAfterTest();
+        $reader = new \local_parce\local\search\file_snippet_reader();
+
+        $this->assertFalse(\local_parce\local\search\file_snippet_reader::is_enabled());
+        $this->assertSame([], $reader->snippets_for([new \stdClass()], 'Ziruma'));
+
+        set_config('filecontent', 1, 'local_parce');
+        $this->assertTrue(\local_parce\local\search\file_snippet_reader::is_enabled());
     }
 
     /**

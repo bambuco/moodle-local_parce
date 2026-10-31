@@ -736,8 +736,8 @@ class question_handler {
                 if ($content === '') {
                     return 'empty_response';
                 }
-                $decoded = json_decode($content, true);
-                if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                $decoded = self::decode_planned_response((string) $content);
+                if ($decoded === null) {
                     return 'invalid_json';
                 }
                 $normalised = self::normalise_planned_intents($decoded, '');
@@ -760,8 +760,8 @@ class question_handler {
             return self::failure_response('error_no_content', 'planning_empty', true);
         }
 
-        $decoded = json_decode($responsedata['generatedcontent'], true);
-        $normalised = self::normalise_planned_intents(is_array($decoded) ? $decoded : [], $planquestion);
+        $decoded = self::decode_planned_response((string) $responsedata['generatedcontent']);
+        $normalised = self::normalise_planned_intents($decoded ?? [], $planquestion);
         if ($normalised === null) {
             return self::failure_response('error_processing_question', 'invalid_intent', true);
         }
@@ -776,6 +776,188 @@ class question_handler {
         }
 
         return $normalised;
+    }
+
+    /**
+     * Decode a planner response that may wrap its JSON in extra text.
+     *
+     * A surrounding Markdown fence or sentence is removed by cutting from the first
+     * opening delimiter to the last closer of the same kind. When that slice is not
+     * JSON, the first balanced object or list is used instead.
+     *
+     * @param string $content Raw planner response.
+     * @return array|null Decoded object, or null when no JSON value can be recovered.
+     */
+    private static function decode_planned_response(string $content): ?array {
+        $content = self::prepare_planned_text($content);
+        $decoded = self::decode_json_value($content);
+        if (is_string($decoded)) {
+            $content = self::prepare_planned_text($decoded);
+            $decoded = self::decode_json_value($content);
+        }
+        if (is_array($decoded)) {
+            return self::wrap_planned_list($decoded);
+        }
+
+        $trimmed = self::trim_to_outer_json($content);
+        if ($trimmed !== null) {
+            $decoded = self::decode_json_value($trimmed);
+            if (is_array($decoded)) {
+                return self::wrap_planned_list($decoded);
+            }
+        }
+
+        $balanced = self::first_balanced_json_value($content);
+        if ($balanced === null) {
+            return null;
+        }
+        $decoded = self::decode_json_value($balanced);
+        if (!is_array($decoded)) {
+            return null;
+        }
+        return self::wrap_planned_list($decoded);
+    }
+
+    /**
+     * Drop a leading byte-order mark and surrounding whitespace.
+     *
+     * @param string $content Planner text.
+     * @return string Prepared text.
+     */
+    private static function prepare_planned_text(string $content): string {
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content;
+        return trim($content);
+    }
+
+    /**
+     * Decode JSON when the value is an object, a list, or a string.
+     *
+     * @param string $content Candidate JSON text.
+     * @return array|string|null Decoded value, or null when the text is not that JSON.
+     */
+    private static function decode_json_value(string $content): array|string|null {
+        $decoded = json_decode($content, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return null;
+        }
+        if (is_array($decoded) || is_string($decoded)) {
+            return $decoded;
+        }
+        return null;
+    }
+
+    /**
+     * Cut from the first opening delimiter to the last closer of the same kind.
+     *
+     * @param string $content Prepared planner text.
+     * @return string|null Slice that may be JSON, or null when no delimiter exists.
+     */
+    private static function trim_to_outer_json(string $content): ?string {
+        $object = strpos($content, '{');
+        $list = strpos($content, '[');
+        if ($object === false && $list === false) {
+            return null;
+        }
+        if ($list === false || ($object !== false && $object < $list)) {
+            $start = $object;
+            $end = strrpos($content, '}');
+        } else {
+            $start = $list;
+            $end = strrpos($content, ']');
+        }
+        if ($end === false || $end < $start) {
+            return null;
+        }
+        return substr($content, $start, $end - $start + 1);
+    }
+
+    /**
+     * Read the first balanced object or list that decodes as JSON.
+     *
+     * @param string $content Prepared planner text.
+     * @return string|null JSON slice, or null when none decodes.
+     */
+    private static function first_balanced_json_value(string $content): ?string {
+        $length = strlen($content);
+        for ($i = 0; $i < $length; $i++) {
+            $char = $content[$i];
+            if ($char !== '{' && $char !== '[') {
+                continue;
+            }
+            $end = self::balanced_json_end($content, $i);
+            if ($end === null) {
+                continue;
+            }
+            $slice = substr($content, $i, $end - $i + 1);
+            $decoded = json_decode($slice, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $slice;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find the closer that balances the opener at the given offset.
+     *
+     * @param string $content Prepared planner text.
+     * @param int $start Offset of the opening delimiter.
+     * @return int|null Offset of the matching closer, or null when the span is unbalanced.
+     */
+    private static function balanced_json_end(string $content, int $start): ?int {
+        $expected = [];
+        $instring = false;
+        $escape = false;
+        $length = strlen($content);
+        for ($i = $start; $i < $length; $i++) {
+            $char = $content[$i];
+            if ($instring) {
+                if ($escape) {
+                    $escape = false;
+                    continue;
+                }
+                if ($char === '\\') {
+                    $escape = true;
+                    continue;
+                }
+                if ($char === '"') {
+                    $instring = false;
+                }
+                continue;
+            }
+            if ($char === '"') {
+                $instring = true;
+                continue;
+            }
+            if ($char === '{' || $char === '[') {
+                $expected[] = $char === '{' ? '}' : ']';
+                continue;
+            }
+            if ($char !== '}' && $char !== ']') {
+                continue;
+            }
+            $closer = array_pop($expected);
+            if ($closer !== $char) {
+                return null;
+            }
+            if ($expected === []) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Present a root list of intents in the object shape the normaliser expects.
+     *
+     * @param array $decoded Decoded JSON value.
+     * @return array Object with an intents element, or the original object.
+     */
+    private static function wrap_planned_list(array $decoded): array {
+        if (array_is_list($decoded)) {
+            return ['intents' => $decoded];
+        }
+        return $decoded;
     }
 
     /**

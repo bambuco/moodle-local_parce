@@ -41,6 +41,12 @@ class content extends base {
         'mod_workshop',
     ];
 
+    /** Solr highlight marker placed before a matched term. */
+    private const HIGHLIGHT_START = '@@HI_S@@';
+
+    /** Solr highlight marker placed after a matched term. */
+    private const HIGHLIGHT_END = '@@HI_E@@';
+
     /**
      * Get the content based on the parameters.
      *
@@ -141,12 +147,8 @@ class content extends base {
             }
         }
 
-        // The logic for "$data->userids" is included but was not found to be implemented in the core code.
-        $data->userids = [$this->user->id];
-
-        // ToDo: A horrible hack to replace the unimplemented "userids" parameter.
-        // A temporary impersonation of the user is needed because the Search API does
-        // not take into account the user being filtered with.
+        // Impersonate the chat user so check_access() runs as them.
+        // Do not set userids: engines that support it treat it as an author filter.
         $tmpuser = $USER;
         try {
             $results = [];
@@ -165,33 +167,34 @@ class content extends base {
             $USER = $tmpuser;
         }
 
+        $snippets = (new \local_parce\local\search\file_snippet_reader())->snippets_for($results, $search);
+
         $limit = 5;
         $coursenames = [];
         $found = [];
         $resultorder = 0;
         foreach ($results as $result) {
-            $title = $result->get('title');
+            // Solr omits empty stored fields. A file hit often has no activity content.
+            if (!$result->is_set('areaid') || !$result->is_set('courseid')) {
+                continue;
+            }
+            $parentid = $result->is_set('id') ? (string) $result->get('id') : '';
+            $sourced = self::get_result_text($result, $snippets[$parentid] ?? '');
 
             // Some search engines treat unquoted terms as alternatives. Keep sufficiently relevant candidates,
             // then rank complete term matches before applying the result limit.
-            $searchabletext = $title . ' ' . $result->get('content');
-            foreach (['description1', 'description2'] as $field) {
-                if ($result->is_set($field)) {
-                    $searchabletext .= ' ' . $result->get($field);
-                }
-            }
-            $score = self::get_search_keyword_score($searchabletext, $keywords);
+            $score = self::get_search_keyword_score($sourced['searchable'], $keywords);
             if ($score === 0) {
                 continue;
             }
 
             $resource = new \stdClass();
-            $resource->name = ($title !== '') ? $title : get_string('notitle', 'search');
+            $resource->name = ($sourced['title'] !== '') ? $sourced['title'] : get_string('notitle', 'search');
             $resource->url = (string)$result->get_doc_url();
             $parts = \core_search\manager::extract_areaid_parts($result->get('areaid'));
             $resource->type = $parts[0];
             $resource->subtype = count($parts) > 1 ? $parts[1] : '';
-            $resource->content = $result->get('content');
+            $resource->content = $sourced['content'];
 
             $courseid = $result->get('courseid');
             if (!isset($coursenames[$courseid])) {
@@ -221,6 +224,70 @@ class content extends base {
         $found = array_map(static fn(array $candidate): \stdClass => $candidate['resource'], array_slice($found, 0, $limit));
 
         return \local_parce\local\controller::encode_retrieved_items($found);
+    }
+
+    /**
+     * Read a returned search field without requiring it to be present.
+     *
+     * @param \core_search\document $result Search result.
+     * @param string $field Field name.
+     * @return string Field text without highlight markers, or an empty string when unset.
+     */
+    private static function get_result_field(\core_search\document $result, string $field): string {
+        if (!$result->is_set($field)) {
+            return '';
+        }
+        return self::strip_highlight_markers((string) $result->get($field));
+    }
+
+    /**
+     * Remove Solr highlight markers from retrieved text.
+     *
+     * @param string $text Raw field or snippet.
+     * @return string Text with markers removed.
+     */
+    private static function strip_highlight_markers(string $text): string {
+        return str_replace([self::HIGHLIGHT_START, self::HIGHLIGHT_END], '', $text);
+    }
+
+    /**
+     * Build the activity text and the text used to score a search result.
+     *
+     * Activity content comes first. Descriptions and the indexed file snippet follow.
+     * File names stay in the scored text only, so a filename match is not treated as the body.
+     *
+     * @param \core_search\document $result Search result.
+     * @param string $filesnippet Indexed file text fetched by Parce for this result.
+     * @return array{title: string, content: string, searchable: string}
+     */
+    private static function get_result_text(\core_search\document $result, string $filesnippet = ''): array {
+        $title = self::get_result_field($result, 'title');
+        $parts = [];
+        foreach (['content', 'description1', 'description2'] as $field) {
+            $value = self::get_result_field($result, $field);
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+        $filesnippet = self::strip_highlight_markers(trim($filesnippet));
+        if ($filesnippet !== '') {
+            $parts[] = $filesnippet;
+        }
+        $content = implode("\n", $parts);
+
+        $filenames = [];
+        foreach ($result->get_files() as $file) {
+            $name = trim($file->get_filename());
+            if ($name !== '') {
+                $filenames[] = $name;
+            }
+        }
+
+        return [
+            'title' => $title,
+            'content' => $content,
+            'searchable' => trim($title . ' ' . $content . ' ' . implode(' ', $filenames)),
+        ];
     }
 
     /**
