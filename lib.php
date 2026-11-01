@@ -23,6 +23,25 @@
  */
 
 /**
+ * Add the docked-chat button to the user navigation bar.
+ *
+ * @param \renderer_base $renderer Renderer used for the navbar
+ * @return string
+ */
+function local_parce_render_navbar_output(\renderer_base $renderer) {
+    if (!\local_parce\local\controller::chat_include()) {
+        return '';
+    }
+    if (!\local_parce\local\appearance::is_docked()) {
+        return '';
+    }
+
+    return $renderer->render_from_template('local_parce/navbar_button', [
+        'icon' => \local_parce\local\appearance::pix_name(\local_parce\local\appearance::get_icon()),
+    ]);
+}
+
+/**
  * Add the owner's history to their profile navigation.
  *
  * @param navigation_node $navigation User navigation

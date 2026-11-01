@@ -58,13 +58,14 @@ class output {
             return;
         }
 
-        // Inject the chat bubble HTML directly.
         $renderer = $PAGE->get_renderer('local_parce');
+        $docked = \local_parce\local\appearance::is_docked();
         $renderdata = [
             'chat_title' => get_config('local_parce', 'chat_title') ?? get_string('defaulttitle', 'local_parce'),
+            'icon' => \local_parce\local\appearance::pix_name(\local_parce\local\appearance::get_icon()),
+            'floating' => !$docked,
         ];
-        $html = $renderer->render_from_template('local_parce/chat_bubble', $renderdata);
-
-        $hook->add_html($html);
+        $template = $docked ? 'local_parce/chat_drawer' : 'local_parce/chat_bubble';
+        $hook->add_html($renderer->render_from_template($template, $renderdata));
     }
 }

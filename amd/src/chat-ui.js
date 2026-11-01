@@ -21,7 +21,7 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
+define(['jquery', 'core/log', 'core/ajax', 'core/drawer'], function($, Log, Ajax, Drawer) {
     'use strict';
 
     const WINDOW_STATE_STORAGE_KEY = 'local_parce_chat_window_open';
@@ -33,6 +33,7 @@ define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
         historyPromise: null,
         chatid: null,
         opener: null,
+        docked: false,
 
         /**
          * Initialise the last persisted state for this page.
@@ -41,6 +42,7 @@ define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
          */
         init: function(chatid) {
             this.chatid = chatid;
+            this.docked = $('#local_parce-chat-container').attr('data-placement') === 'docked';
             this.syncWindowState(this.getPersistedWindowState());
             if (this.isWindowOpen) {
                 this.ensureHistoryLoaded().catch(() => null);
@@ -82,12 +84,23 @@ define(['jquery', 'core/log', 'core/ajax'], function($, Log, Ajax) {
          * @param {boolean} open Whether the widget is open
          */
         syncWindowState: function(open) {
-            const container = $('#local_parce-chat-window-container');
             const toggle = $('#local_parce-chat-toggle');
             this.isWindowOpen = open;
+            toggle.attr('aria-expanded', open ? 'true' : 'false');
+            if (this.docked) {
+                const root = $('.local_parce-drawer');
+                if (root.length) {
+                    if (open) {
+                        Drawer.show(root);
+                    } else {
+                        Drawer.hide(root);
+                    }
+                }
+                return;
+            }
+            const container = $('#local_parce-chat-window-container');
             container.toggleClass('local_parce-visible', open);
             container.prop('hidden', !open).attr('aria-hidden', open ? 'false' : 'true');
-            toggle.attr('aria-expanded', open ? 'true' : 'false');
         },
 
         /**

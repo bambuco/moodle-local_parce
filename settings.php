@@ -185,6 +185,30 @@ if ($hassiteconfig) {
         $historylimitvalidation
     ));
 
+    $appearancesettings = new admin_settingpage(
+        'local_parce_appearance',
+        new lang_string('settingpage_appearance', 'local_parce')
+    );
+    $ADMIN->add('local_parce_folder', $appearancesettings);
+
+    $appearancesettings->add(new admin_setting_configselect(
+        'local_parce/windowplacement',
+        get_string('setting_windowplacement', 'local_parce'),
+        get_string('setting_windowplacement_desc', 'local_parce'),
+        \local_parce\local\appearance::PLACEMENT_DOCKED,
+        [
+            \local_parce\local\appearance::PLACEMENT_DOCKED => get_string('setting_window_docked', 'local_parce'),
+            \local_parce\local\appearance::PLACEMENT_FLOATING => get_string('setting_window_floating', 'local_parce'),
+        ]
+    ));
+
+    $appearancesettings->add(new \local_parce\local\icon_select(
+        'local_parce/buttonicon',
+        get_string('setting_buttonicon', 'local_parce'),
+        get_string('setting_buttonicon_desc', 'local_parce'),
+        \local_parce\local\appearance::DEFAULT_ICON
+    ));
+
     if (\local_parce\local\search\file_content_schema::is_solr_configured()) {
         $ADMIN->add('local_parce_folder', new admin_externalpage(
             'local_parce_filecontent',

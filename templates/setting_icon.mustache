@@ -1,0 +1,64 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_parce/setting_icon
+
+    Icon picker for the chat open button.
+
+    Example context (json):
+    {
+        "id": "id_s_local_parce_buttonicon",
+        "name": "s_local_parce_buttonicon",
+        "currenturl": "http://example.com/robot.svg",
+        "currentlabel": "robot",
+        "grouplabel": "Button icon",
+        "readonly": false,
+        "icons": [
+            {
+                "value": "robot",
+                "label": "robot",
+                "url": "http://example.com/robot.svg",
+                "selected": true
+            }
+        ]
+    }
+}}
+<div class="local-parce-iconpicker dropdown">
+    <button type="button"
+        id="{{id}}"
+        class="btn btn-outline-secondary dropdown-toggle local-parce-iconpicker-toggle"
+        data-bs-toggle="dropdown"
+        data-bs-auto-close="true"
+        aria-expanded="false"
+        {{#readonly}}disabled{{/readonly}}>
+        <img src="{{currenturl}}" alt="" class="local-parce-iconpicker-current" width="24" height="24">
+        <span class="local-parce-iconpicker-label">{{currentlabel}}</span>
+    </button>
+    <div class="dropdown-menu local-parce-iconpicker-menu" role="radiogroup" aria-label="{{grouplabel}}">
+        {{#icons}}
+            <label class="local-parce-iconpicker-option">
+                <input type="radio"
+                    name="{{name}}"
+                    value="{{value}}"
+                    {{#selected}}checked{{/selected}}
+                    {{#readonly}}disabled{{/readonly}}>
+                <img src="{{url}}" alt="" width="24" height="24">
+                <span>{{label}}</span>
+            </label>
+        {{/icons}}
+    </div>
+</div>

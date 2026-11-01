@@ -1,0 +1,87 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template local_parce/chat_window
+
+    Chat panel shared by the floating window and the right-hand drawer.
+
+    Example context (json):
+    {
+        "chat_title": "Chat with Parce",
+        "floating": true
+    }
+}}
+<div id="local_parce-chat-window-container"
+    class="{{^floating}}local_parce-docked{{/floating}}"
+    role="dialog"
+    aria-modal="false"
+    aria-labelledby="local_parce-chat-title"
+    {{#floating}}aria-hidden="true" hidden{{/floating}}>
+    <div class="local_parce-chat-window">
+        <div class="local_parce-chat-header">
+            <h4 id="local_parce-chat-title" class="local_parce-chat-title">{{chat_title}}</h4>
+            <button type="button" class="btn btn-sm btn-link local_parce-close-btn"
+                aria-label="{{#str}} aria_close_chat, local_parce {{/str}}">
+                {{#pix}} i/window_close {{/pix}}
+            </button>
+        </div>
+        <div class="local_parce-usage-region">
+            <div class="local_parce-usage-summary">
+                <span>{{#str}} conversation_usage, local_parce {{/str}}</span>
+                <span class="local_parce-usage-percentage">0%</span>
+            </div>
+            <div class="progress local_parce-usage-progress"
+                role="progressbar"
+                aria-label="{{#str}} conversation_usage_aria, local_parce {{/str}}"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0">
+                <div class="progress-bar local_parce-usage-bar" style="width: 0%"></div>
+            </div>
+        </div>
+        <div id="local_parce-messages-container"
+            class="local_parce-chat-messages"
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-atomic="false">
+            <div class="local_parce-message-welcome">
+                <p>
+                    {{#str}} chat_welcome, local_parce {{/str}}
+                </p>
+            </div>
+        </div>
+        <div id="local_parce-chat-status"
+            class="local_parce-chat-status hidden"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"></div>
+        <div class="local_parce-chat-footer">
+            <label for="local_parce_message_input" class="visually-hidden">{{#str}} aria_message_input, local_parce {{/str}}</label>
+            <textarea id="local_parce_message_input"
+                name="message_input"
+                class="form-control local_parce-message-input"
+                placeholder="{{#str}} placeholder, local_parce {{/str}}"
+                aria-label="{{#str}} aria_message_input, local_parce {{/str}}"></textarea>
+            <button type="button" class="local_parce-send-btn btn btn-primary"
+                aria-label="{{#str}} chat_send, local_parce {{/str}}"
+                title="{{#str}} chat_send, local_parce {{/str}}">
+                {{#pix}} i/sendmessage {{/pix}}
+            </button>
+        </div>
+    </div>
+</div>

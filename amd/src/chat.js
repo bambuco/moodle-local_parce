@@ -103,8 +103,17 @@ export const init = async(chatid) => {
                 ChatUI.closeWindow();
             });
 
-            // Close window when clicking outside.
+            // The floating window closes on an outside click. The docked drawer stays open.
             $(document).on('click.localParceChat', function(e) {
+                if (ChatUI.docked) {
+                    return;
+                }
+
+                var toggle = $('#local_parce-chat-toggle');
+                if (toggle.is(e.target) || toggle.has(e.target).length) {
+                    return;
+                }
+
                 var widget = $('#local_parce-chat-container');
                 if (ChatUI.isWindowOpen && !widget.is(e.target) && !widget.has(e.target).length) {
                     ChatUI.closeWindow();
