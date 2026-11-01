@@ -64,6 +64,10 @@ class resource extends content {
         $activitytypes = array_values(array_diff($resourcetypes, ['core_course']));
         if (empty($keywords) && !empty($activitytypes)) {
             $results = $this->get_visible_activities($resourcetypes);
+        } else if (empty($keywords)) {
+            // A course request without distinctive terms asks for the user's enrolments.
+            // Searching with an empty query is rejected by Solr.
+            $results = $this->get_enrolled_courses();
         } else {
             $searchtypes = array_map(
                 static fn(string $type): string => $type === 'core_course' ? $type : 'mod_' . $type,
@@ -197,6 +201,39 @@ class resource extends content {
                     break 2;
                 }
             }
+        }
+
+        return empty($found) ? '' : \local_parce\local\controller::encode_retrieved_items($found);
+    }
+
+    /**
+     * List visible enrolled courses when the request names courses but has no distinctive search terms.
+     *
+     * @return string JSON encoded course links, or an empty string when the user has none.
+     */
+    private function get_enrolled_courses(): string {
+        global $CFG;
+        require_once($CFG->dirroot . '/course/lib.php');
+
+        $courses = enrol_get_users_courses($this->user->id, true, 'id, fullname, format', 'fullname ASC');
+
+        $found = [];
+        foreach ($courses as $course) {
+            if ((int) $course->id === SITEID) {
+                continue;
+            }
+
+            $coursecontext = \context_course::instance($course->id);
+            $name = format_string($course->fullname, true, ['context' => $coursecontext]);
+            $url = (string) course_get_url($course);
+            $resource = new \stdClass();
+            $resource->name = $name;
+            $resource->url = $url;
+            $resource->type = 'core_course';
+            $resource->coursename = $name;
+            $resource->courseurl = $url;
+            $resource->content = '';
+            $found[] = $resource;
         }
 
         return empty($found) ? '' : \local_parce\local\controller::encode_retrieved_items($found);

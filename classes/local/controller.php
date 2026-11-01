@@ -70,6 +70,32 @@ class controller
     }
 
     /**
+     * Whether the chat is already the site, including the front page.
+     *
+     * @param \context $context Page or canonical chat context
+     * @return bool
+     */
+    public static function is_site_level(\context $context): bool {
+        $chatcontext = self::get_chat_context($context);
+        if ($chatcontext->contextlevel === CONTEXT_SYSTEM) {
+            return true;
+        }
+
+        return $chatcontext->contextlevel === CONTEXT_COURSE && (int) $chatcontext->instanceid === (int) SITEID;
+    }
+
+    /**
+     * Reject a chat id that is not a course or system context.
+     *
+     * @param \context $context Context supplied as a chat id
+     */
+    public static function require_chat_context(\context $context): void {
+        if (!in_array($context->contextlevel, [CONTEXT_SYSTEM, CONTEXT_COURSE], true)) {
+            throw new \invalid_parameter_exception('The chat ID is not a valid chat context.');
+        }
+    }
+
+    /**
      * Check if the chat component should be included on the page.
      *
      * @return bool True if the chat should be included, false otherwise
@@ -585,10 +611,223 @@ class controller
     }
 
     /**
+     * Whether the active conversation answers as the site.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @return bool
+     */
+    public static function get_global_context(int $userid, int $chatid): bool {
+        $conversation = self::get_conversation($userid, $chatid);
+        return !empty($conversation['globalcontext']);
+    }
+
+    /**
+     * Store the site-context choice on an empty conversation.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @param bool $enabled Whether later questions use the site context
+     * @return bool Whether the choice was stored
+     */
+    public static function set_global_context(int $userid, int $chatid, bool $enabled): bool {
+        $context = \context::instance_by_id($chatid);
+        if (self::is_site_level($context) || self::get_conversation_entries($userid, $chatid) !== []) {
+            return false;
+        }
+        if ($enabled && !self::can_use_chat(\context_system::instance())) {
+            return false;
+        }
+
+        self::generate_conversation_key($userid, $chatid);
+        self::write_global_context($userid, $chatid, $enabled);
+        return true;
+    }
+
+    /**
+     * Apply the context choice for one question without changing a started thread.
+     *
+     * A rotated conversation always starts with the page context. A thread that
+     * already has entries keeps the choice stored with it.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @param \context $pagecontext Context of the page that sent the question
+     * @param bool $requested Choice sent with the first message
+     * @param bool $rotated Whether this question opened a conversation because of a limit
+     * @return bool Whether the question is answered with the site context
+     */
+    public static function apply_requested_global_context(
+        int $userid,
+        int $chatid,
+        \context $pagecontext,
+        bool $requested,
+        bool $rotated
+    ): bool {
+        if ($rotated) {
+            self::write_global_context($userid, $chatid, false);
+            return false;
+        }
+        if (self::is_site_level($pagecontext)) {
+            return false;
+        }
+        if (self::get_conversation_entries($userid, $chatid) !== []) {
+            return self::get_global_context($userid, $chatid) && self::can_use_chat(\context_system::instance());
+        }
+
+        $enabled = $requested && self::can_use_chat(\context_system::instance());
+        self::generate_conversation_key($userid, $chatid);
+        self::write_global_context($userid, $chatid, $enabled);
+        return $enabled;
+    }
+
+    /**
+     * Replace the active thread with an empty one that uses the page context.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @return bool Whether a previous thread was archived from the active cache
+     */
+    public static function start_new_conversation(int $userid, int $chatid): bool {
+        $entries = self::get_conversation_entries($userid, $chatid);
+        if ($entries === []) {
+            if (self::get_conversation($userid, $chatid) !== null) {
+                self::write_global_context($userid, $chatid, false);
+            }
+            return false;
+        }
+
+        $cache = self::get_cache();
+        $cache->delete(self::get_cache_key($userid, $chatid));
+        self::generate_conversation_key($userid, $chatid);
+        self::write_global_context($userid, $chatid, false);
+        return true;
+    }
+
+    /**
+     * Open a thread whose only visible message is a summary of the previous one.
+     *
+     * The previous turns stay in the database under their original conversation key.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @param bool $globalcontext Context choice inherited from the summarised thread
+     * @param string $summaryhtml Sanitised summary paragraph
+     * @param int[] $actionids AI action records to link
+     * @param int $cacheversion Cache version captured before the summary request
+     * @return bool Whether the new thread was stored
+     */
+    public static function store_opening_summary(
+        int $userid,
+        int $chatid,
+        bool $globalcontext,
+        string $summaryhtml,
+        array $actionids,
+        int $cacheversion
+    ): bool {
+        global $DB;
+
+        if (!self::is_active_cache_version($cacheversion)) {
+            return false;
+        }
+
+        $now = time();
+        $conversationkey = bin2hex(random_bytes(32));
+        $transaction = $DB->start_delegated_transaction();
+        $record = (object) [
+            'userid' => $userid,
+            'chatid' => $chatid,
+            'conversationkey' => $conversationkey,
+            'question' => get_string('conversation_summary_question', 'local_parce'),
+            'response' => $summaryhtml,
+            'timecreated' => $now,
+        ];
+        $entryid = $DB->insert_record('local_parce_conversation_entries', $record);
+        foreach ($actionids as $actionid) {
+            $DB->set_field('local_parce_ai_actions', 'conversationentryid', $entryid, ['id' => $actionid]);
+        }
+        $transaction->allow_commit();
+
+        if (!self::is_active_cache_version($cacheversion)) {
+            return false;
+        }
+
+        $data = [
+            'entries' => [[
+                'role' => 'system',
+                'content' => $summaryhtml,
+                'timestamp' => $now,
+                'summary' => true,
+            ]],
+            'created' => $now,
+            'lastaccess' => $now,
+            'conversationkey' => $conversationkey,
+            'cacheversion' => self::get_active_cache_version(),
+            'globalcontext' => $globalcontext,
+        ];
+        $cache = self::get_cache();
+        $key = self::get_cache_key($userid, $chatid);
+        $cache->set($key, $data);
+        self::register_user_cache_key($userid, $key);
+        return true;
+    }
+
+    /**
+     * Build a transcript of the active conversation that fits the payload budget.
+     *
+     * Older turns are dropped first when the whole conversation does not fit.
+     *
+     * @param array $entries Chronological conversation entries
+     * @return string Transcript sent to the summary request
+     */
+    public static function build_summary_transcript(array $entries): string {
+        $lines = [];
+        foreach ($entries as $entry) {
+            $text = html_entity_decode(strip_tags((string) ($entry['content'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $text = trim((string) preg_replace('/\s+/u', ' ', $text));
+            if ($text === '') {
+                continue;
+            }
+            $role = ($entry['role'] ?? '') === 'user' ? 'User' : 'Assistant';
+            $lines[] = $role . ': ' . $text;
+        }
+
+        $prompt = get_string('conversation_summary_prompt', 'local_parce');
+        while (
+            count($lines) > 1
+            && self::estimate_tokens($prompt . "\n" . implode("\n", $lines)) > self::MAX_PAYLOAD_TOKENS
+        ) {
+            array_shift($lines);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * Write the site-context flag onto the active cache record.
+     *
+     * @param int $userid User ID
+     * @param int $chatid Canonical chat context ID
+     * @param bool $enabled Whether the thread uses the site context
+     */
+    private static function write_global_context(int $userid, int $chatid, bool $enabled): void {
+        $cache = self::get_cache();
+        $key = self::get_cache_key($userid, $chatid);
+        $data = self::get_current_cache_data($cache, $key);
+        if ($data === false) {
+            return;
+        }
+
+        $data['globalcontext'] = $enabled;
+        $cache->set($key, $data);
+    }
+
+    /**
      * Select recent complete turns from active cache for the AI prompt.
      *
      * Persistent history is deliberately never read here. Incomplete or malformed
-     * cached entries are also excluded.
+     * cached entries are also excluded. An opening summary is included before
+     * those turns so the next question can continue from it.
      *
      * @param int $userid User ID
      * @param int $chatid Canonical chat context ID
@@ -596,14 +835,32 @@ class controller
      */
     public static function get_prompt_context(int $userid, int $chatid): array {
         $entries = self::get_conversation_entries($userid, $chatid);
+        $opening = [];
+        $offset = 0;
+        if (($entries[0]['summary'] ?? false) && ($entries[0]['role'] ?? '') === 'system') {
+            $opening = [[
+                'role' => 'system',
+                'content' => $entries[0]['content'],
+            ]];
+            $offset = 1;
+        }
+
         $turns = [];
-        for ($index = 0; $index + 1 < count($entries); $index += 2) {
+        for ($index = $offset; $index + 1 < count($entries); $index += 2) {
             $question = $entries[$index];
             $answer = $entries[$index + 1];
             if (($question['role'] ?? '') !== 'user' || ($answer['role'] ?? '') !== 'system') {
                 continue;
             }
             $turns[] = [$question, $answer];
+        }
+
+        $openingtokens = 0;
+        foreach ($opening as $message) {
+            $openingtokens += self::estimate_tokens($message['content']);
+        }
+        if ($openingtokens > self::MAX_PROMPT_TOKENS) {
+            return $opening;
         }
 
         $selected = [];
@@ -613,7 +870,10 @@ class controller
             if (!empty($turn[0]['resolvedquestion'])) {
                 $turntokens += self::estimate_tokens($turn[0]['resolvedquestion']);
             }
-            if (count($selected) >= self::MAX_PROMPT_TURNS || $tokens + $turntokens > self::MAX_PROMPT_TOKENS) {
+            if (
+                count($selected) >= self::MAX_PROMPT_TURNS
+                || $openingtokens + $tokens + $turntokens > self::MAX_PROMPT_TOKENS
+            ) {
                 break;
             }
             $selected[] = $turn;
@@ -634,7 +894,7 @@ class controller
             }
         }
 
-        return $context;
+        return array_merge($opening, $context);
     }
 
     /**

@@ -44,6 +44,30 @@ $functions = [
         'capabilities' => 'local/parce:usechat',
     ],
 
+    'local_parce_set_global_context' => [
+        'classname' => local_parce\external\set_global_context::class,
+        'description' => 'Store the site-context choice for an empty conversation.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/parce:usechat',
+    ],
+
+    'local_parce_start_new_conversation' => [
+        'classname' => local_parce\external\start_new_conversation::class,
+        'description' => 'Start an empty active conversation using the page context.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/parce:usechat',
+    ],
+
+    'local_parce_summarise_new_conversation' => [
+        'classname' => local_parce\external\summarise_new_conversation::class,
+        'description' => 'Start a conversation whose first message summarises the active one.',
+        'type' => 'write',
+        'ajax' => true,
+        'capabilities' => 'local/parce:usechat',
+    ],
+
     'local_parce_get_conversation' => [
         'classname' => local_parce\external\get_conversation::class,
         'description' => 'Get persistent paginated chat conversation history.',

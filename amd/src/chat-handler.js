@@ -58,7 +58,7 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
          * @return {Promise|boolean} False if another turn is active
          */
         sendMessage: function(message) {
-            if (this.isSending || this.pending || message.length === 0) {
+            if (this.isSending || this.pending || ChatUI.isBusy || message.length === 0) {
                 return false;
             }
             this.pending = {
@@ -84,12 +84,15 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
             ChatUI.removeOperationFeedback();
 
             return ChatUI.ensureHistoryLoaded().then(() => {
+                if (pending.globalcontext === undefined) {
+                    pending.globalcontext = ChatUI.isGlobalContextSelected();
+                }
                 if (!pending.userNode) {
                     pending.userNode = ChatUI.addMessage(pending.message, 'user');
                 }
                 ChatUI.clearStatus();
                 ChatUI.showLoading();
-                return this.submitQuestion(pending.message);
+                return this.submitQuestion(pending.message, pending.globalcontext);
             }).then((response) => {
                 ChatUI.hideLoading();
                 ChatUI.updateUsage(response.usagepercentage);
@@ -99,6 +102,7 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
                         ChatUI.startNewConversation(pending.userNode);
                     }
                     ChatUI.addMessage(response.answer || text.chaterrorprocessing, 'system');
+                    ChatUI.applyServerContext(response.globalcontext);
                     this.pending = null;
                     return true;
                 }
@@ -141,14 +145,16 @@ define(['core/log', 'core/str', 'core/ajax', 'local_parce/chat-ui'], function(Lo
          * Submit one backend operation.
          *
          * @param {string} question User question
+         * @param {boolean} globalcontext Site context selected before the first message
          * @return {Promise}
          */
-        submitQuestion: function(question) {
+        submitQuestion: function(question, globalcontext) {
             return Ajax.call([{
                 methodname: 'local_parce_answer',
                 args: {
                     question: question,
-                    contextid: M.cfg.contextid || 1
+                    contextid: M.cfg.contextid || 1,
+                    globalcontext: !!globalcontext
                 }
             }])[0];
         }

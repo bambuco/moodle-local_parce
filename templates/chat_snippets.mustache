@@ -22,7 +22,15 @@
     Example context (json):
     {}
 }}
-<div class="local_parce-message-welcome hidden"><p>{{#str}} chat_welcome, local_parce {{/str}}</p></div>
+<div class="local_parce-message-welcome hidden">
+    <p>{{#str}} chat_welcome, local_parce {{/str}}</p>
+    {{^sitelevel}}
+    <label class="form-check form-switch local_parce-global-switch">
+        <input type="checkbox" class="form-check-input local_parce-global-context" role="switch">
+        <span class="form-check-label">{{#str}} globalcontext, local_parce {{/str}}</span>
+    </label>
+    {{/sitelevel}}
+</div>
 <div class="local_parce-conversation-notice hidden">
     {{#str}} conversation_started, local_parce {{/str}}
 </div>

@@ -60,10 +60,20 @@ class output {
 
         $renderer = $PAGE->get_renderer('local_parce');
         $docked = \local_parce\local\appearance::is_docked();
+        $sitelevel = \local_parce\local\controller::is_site_level($PAGE->context);
+        $pagename = $PAGE->context->get_context_name(false, false, false);
+        $contextpagelabel = get_string('context_of', 'local_parce', $pagename);
+        $contextgloballabel = get_string('globalcontext', 'local_parce');
+        $helpicon = new \core\output\help_icon('globalcontext', 'local_parce');
         $renderdata = [
             'chat_title' => get_config('local_parce', 'chat_title') ?? get_string('defaulttitle', 'local_parce'),
             'icon' => \local_parce\local\appearance::pix_name(\local_parce\local\appearance::get_icon()),
             'floating' => !$docked,
+            'sitelevel' => $sitelevel,
+            'contextlabel' => $sitelevel ? $contextgloballabel : $contextpagelabel,
+            'contextpagelabel' => $contextpagelabel,
+            'contextgloballabel' => $contextgloballabel,
+            'helpicon' => $helpicon->export_for_template($renderer),
         ];
         $template = $docked ? 'local_parce/chat_drawer' : 'local_parce/chat_bubble';
         $hook->add_html($renderer->render_from_template($template, $renderdata));

@@ -96,6 +96,21 @@ export const init = async(chatid) => {
                 this.style.height = (this.scrollHeight) + 'px';
             });
 
+            // The context switch is only present before the first message.
+            $(document).on('change.localParceChat', '#local_parce-messages-container .local_parce-global-context', function() {
+                ChatUI.setGlobalContext($(this).is(':checked'));
+            });
+
+            $(document).on('click.localParceChat', '[data-action="new-empty"]', function(e) {
+                e.preventDefault();
+                ChatUI.startEmptyConversation();
+            });
+
+            $(document).on('click.localParceChat', '[data-action="new-summary"]', function(e) {
+                e.preventDefault();
+                ChatUI.startSummaryConversation();
+            });
+
             // Listen for close button click.
             $(document).on('click.localParceChat', '.local_parce-close-btn', function(e) {
                 e.preventDefault();
@@ -115,6 +130,10 @@ export const init = async(chatid) => {
                 }
 
                 var widget = $('#local_parce-chat-container');
+                // The help popover is attached to the document body so the window does not clip it.
+                if ($(e.target).closest('.popover').length) {
+                    return;
+                }
                 if (ChatUI.isWindowOpen && !widget.is(e.target) && !widget.has(e.target).length) {
                     ChatUI.closeWindow();
                 }

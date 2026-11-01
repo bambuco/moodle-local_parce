@@ -7,27 +7,13 @@
 - Moodle 5.1 (`2025100600`) only.
 - PHP 8.2 or newer, following the Moodle 5.1 platform requirement.
 - `aiprovider_bbco` version `2026080800` or newer.
-
-## Data architecture
-
-Parce deliberately keeps active and durable data separate:
-
-- The active conversation and every AI prompt use only the Moodle `MODE_SESSION` cache.
-- The database is used only for persistent history, guest audit records and AI action traces.
-- AI traces correlate each turn and logical call, recording every ordered provider fallback with stable outcomes and monotonic duration.
-- Persistent history is never read back into the active conversation or an AI prompt.
-- A chat belongs to a canonical Moodle course context, or to the system context outside courses.
-- The persistent `conversationkey` is a cryptographically random thread identifier. PHP session identifiers are used only to isolate internal cache keys.
-
-The active thread rotates before a question would reach either its configured limit or the hard limits of 40 complete turns and 16,000 estimated tokens. Prompts include at most eight complete recent turns and 8,000 estimated tokens. Retrieved Search, Calendar, Grades or Progress data has an independent 8,000-token budget; the complete provider payload is limited to 18,000 estimated tokens.
-
-Retrieved content, events, grade and completion data are untrusted data. Parce sends its request-specific instruction separately so BBCO can replace the effective provider's generic `generate_text` system instruction. Questions, prior turns and retrieved data remain isolated with explicit text delimiters in the user prompt.
+- Using files as context requires indexing with Solr.
 
 ## History, guests and privacy
 
 - Authenticated users can read their own durable history after losing course enrolment.
 - Reading another user's history requires `local/parce:viewallchats` in the requested chat context and emits a Moodle event.
-- Guests can use the widget only when explicitly enabled. Their successful turns and AI traces are persisted under an auditable `conversationkey`, but guests cannot query history.
+- Guests can use the widget only when explicitly enabled. Their successful turns and AI traces are persisted, but guests cannot query history.
 - The Moodle Privacy API describes, exports and deletes conversation and AI-action data. Privacy deletion also invalidates active cache snapshots in other sessions.
 
 No automatic retention or purge policy is implemented. Conversation history and AI traces are provisionally retained until Privacy API deletion. They are intentionally excluded from course backup/restore pending an institutional lifecycle decision.
@@ -38,7 +24,7 @@ This development pair is installed in this order:
 
 1. Install and configure `public/ai/provider/bbco`.
 2. Install `public/local/parce`.
-3. Configure at least one real Moodle AI provider behind BBCO.
+3. Configure at least one real Moodle AI provider behind BbCo.
 4. Configure and enable Parce in Site administration.
 5. Purge Moodle caches and run the component test suites.
 
@@ -84,6 +70,10 @@ Search, calendar, course-structure, grade and progress retrieval always use the 
 - Parce adds neither a custom rate limiter nor a custom session lock; it relies on Moodle's AI limiter and normal writable-session request locking.
 
 ## In version
+
+- 2026103101:
+    -- New appearance settings
+    -- Support for context-based searching within files when using Solr.
 
 - 2026092300:
     -- Multi-intent planning (`intents[]`), unified answer for multi-part questions, `max_require_ia_intents` setting

@@ -530,6 +530,48 @@ final class question_handler_test extends \advanced_testcase {
     }
 
     /**
+     * A course request without search terms lists the user's visible enrolments.
+     */
+    public function test_resource_course_request_lists_enrolled_courses(): void {
+        $this->resetAfterTest();
+        $visible = $this->getDataGenerator()->create_course(['fullname' => 'Curso visible de prueba']);
+        $other = $this->getDataGenerator()->create_course(['fullname' => 'Curso ajeno']);
+        $hidden = $this->getDataGenerator()->create_course([
+            'fullname' => 'Curso oculto de prueba',
+            'visible' => 0,
+        ]);
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $visible->id, 'student');
+        $this->getDataGenerator()->enrol_user($student->id, $hidden->id, 'student');
+        $this->setUser($student);
+
+        $provider = new test_provider(true, 'fake', '[]', id: 1);
+        $plan = new \local_parce\aiactions\responses\response_question_plan(true);
+        $plan->set_response_data([
+            'generatedcontent' => json_encode([
+                'type' => 'resource',
+                'params' => ['content' => [], 'resourcetype' => ['core_course']],
+                'resolvedquestion' => '¿Qué cursos tengo matriculados?',
+            ]),
+            'model' => 'fake-model',
+        ]);
+        $gateway = new test_ai_gateway([$plan], $provider);
+
+        $answer = \local_parce\local\question_handler::process(
+            'Qué cursos tengo matriculados',
+            \context_system::instance(),
+            $gateway
+        );
+
+        $this->assertStringContainsString('Curso visible de prueba', $answer);
+        $this->assertStringContainsString('/course/view.php?id=' . $visible->id, $answer);
+        $this->assertStringNotContainsString($other->fullname, $answer);
+        $this->assertStringNotContainsString('Curso oculto de prueba', $answer);
+        $this->assertSame(1, $gateway->get_generate_calls());
+        $this->assertSame('success', \local_parce\local\question_handler::get_last_result()['status']);
+    }
+
+    /**
      * Grade questions use the user's visible grade report as answer context.
      */
     public function test_grades_intent_answers_from_visible_grade(): void {

@@ -34,6 +34,9 @@ define(['jquery', 'core/log', 'core/ajax', 'core/drawer'], function($, Log, Ajax
         chatid: null,
         opener: null,
         docked: false,
+        globalContext: false,
+        hasEntries: false,
+        isBusy: false,
 
         /**
          * Initialise the last persisted state for this page.
@@ -213,8 +216,145 @@ define(['jquery', 'core/log', 'core/ajax', 'core/drawer'], function($, Log, Ajax
          * @param {boolean} sending Whether a send is active
          */
         setSending: function(sending) {
-            $('.local_parce-send-btn').prop('disabled', sending);
+            $('.local_parce-send-btn, .local_parce-new-chat-btn').prop('disabled', sending);
             $('.local_parce-message-input').attr('aria-busy', sending ? 'true' : 'false');
+            if (sending) {
+                $('[data-action="new-empty"], [data-action="new-summary"], .local_parce-global-context')
+                    .prop('disabled', true);
+            } else {
+                $('.local_parce-global-context, [data-action="new-empty"]').prop('disabled', false);
+                this.syncContextLabel();
+            }
+        },
+
+        /**
+         * Read the switch shown before the first message.
+         *
+         * @return {boolean}
+         */
+        isGlobalContextSelected: function() {
+            const input = $('#local_parce-messages-container .local_parce-global-context');
+            if (input.length === 0) {
+                return !!this.globalContext;
+            }
+            return input.is(':checked');
+        },
+
+        /**
+         * Show the context of the active thread and enable summary only when it has messages.
+         */
+        syncContextLabel: function() {
+            const region = $('.local_parce-usage-region');
+            const site = region.attr('data-site-level') === '1';
+            const label = (site || this.globalContext) ?
+                region.attr('data-context-global') : region.attr('data-context-page');
+            $('.local_parce-context-label').text(label || '').attr('title', label || '');
+            $('[data-action="new-summary"]').prop('disabled', !this.hasEntries || this.isBusy);
+        },
+
+        /**
+         * Apply the context reported by the server.
+         *
+         * @param {boolean} globalcontext Whether the active thread uses the site
+         */
+        applyServerContext: function(globalcontext) {
+            this.globalContext = !!globalcontext;
+            this.hasEntries = $('#local_parce-messages-container .local_parce-message').length > 0;
+            this.syncContextLabel();
+        },
+
+        /**
+         * Store the switch choice for an empty conversation.
+         *
+         * @param {boolean} enabled Whether the site context is selected
+         */
+        setGlobalContext: function(enabled) {
+            const previous = this.globalContext;
+            this.globalContext = !!enabled;
+            this.syncContextLabel();
+            Ajax.call([{
+                methodname: 'local_parce_set_global_context',
+                args: {chatid: this.chatid, enabled: !!enabled}
+            }])[0].then((response) => {
+                this.globalContext = !!response.globalcontext;
+                this.syncContextLabel();
+                $('#local_parce-messages-container .local_parce-global-context').prop('checked', this.globalContext);
+                return response;
+            }).catch((error) => {
+                this.globalContext = previous;
+                this.syncContextLabel();
+                $('#local_parce-messages-container .local_parce-global-context').prop('checked', previous);
+                Log.debug('Parce: context choice failed', error);
+            });
+        },
+
+        /**
+         * Replace the active thread with the welcome and the context switch.
+         */
+        startEmptyConversation: function() {
+            if (this.isBusy) {
+                return;
+            }
+            this.isBusy = true;
+            this.setSending(true);
+            Ajax.call([{
+                methodname: 'local_parce_start_new_conversation',
+                args: {chatid: this.chatid}
+            }])[0].then((response) => {
+                this.globalContext = !!response.globalcontext;
+                this.hasEntries = false;
+                this.hasLoadedHistory = true;
+                this.renderHistoryEntries([]);
+                this.updateUsage(response.usagepercentage);
+                this.clearStatus();
+                return response;
+            }).catch((error) => {
+                this.showStatus('error', this.getText('historyerror'), null);
+                Log.debug('Parce: new conversation failed', error);
+            }).then(() => {
+                this.isBusy = false;
+                this.setSending(false);
+            });
+        },
+
+        /**
+         * Start a thread whose first message is a summary of the current one.
+         */
+        startSummaryConversation: function() {
+            if (this.isBusy || !this.hasEntries) {
+                return;
+            }
+            this.isBusy = true;
+            this.setSending(true);
+            this.showLoading();
+            Ajax.call([{
+                methodname: 'local_parce_summarise_new_conversation',
+                args: {chatid: this.chatid}
+            }])[0].then((response) => {
+                this.hideLoading();
+                if (!response.successful) {
+                    this.showStatus('error', response.errormessage || this.getText('historyerror'), null);
+                    return response;
+                }
+                this.globalContext = !!response.globalcontext;
+                this.hasEntries = true;
+                this.hasLoadedHistory = true;
+                this.renderHistoryEntries([{
+                    content: response.summary,
+                    role: 'system',
+                    timestamp_formatted: this.formatTime(new Date())
+                }]);
+                this.updateUsage(response.usagepercentage);
+                this.clearStatus();
+                return response;
+            }).catch((error) => {
+                this.hideLoading();
+                this.showStatus('error', this.getText('historyerror'), null);
+                Log.debug('Parce: conversation summary failed', error);
+            }).then(() => {
+                this.isBusy = false;
+                this.setSending(false);
+            });
         },
 
         /**
@@ -329,7 +469,10 @@ define(['jquery', 'core/log', 'core/ajax', 'core/drawer'], function($, Log, Ajax
                 methodname: 'local_parce_get_active_conversation',
                 args: {chatid: this.chatid}
             }])[0].then((response) => {
+                this.globalContext = !!response.globalcontext;
+                this.hasEntries = response.entries.length > 0;
                 this.renderHistoryEntries(response.entries);
+                this.syncContextLabel();
                 this.updateUsage(response.usagepercentage);
                 this.hasLoadedHistory = true;
                 this.isLoadingHistory = false;
@@ -362,6 +505,7 @@ define(['jquery', 'core/log', 'core/ajax', 'core/drawer'], function($, Log, Ajax
             container.attr('aria-live', 'off').empty();
             if (entries.length === 0) {
                 const welcome = $('#local_parce-chat-container > .local_parce-message-welcome').first().clone();
+                welcome.find('.local_parce-global-context').prop('checked', !!this.globalContext);
                 welcome.removeClass('hidden').appendTo(container);
             } else {
                 entries.forEach((entry) => {

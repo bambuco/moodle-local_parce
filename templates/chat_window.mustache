@@ -39,18 +39,49 @@
                 {{#pix}} i/window_close {{/pix}}
             </button>
         </div>
-        <div class="local_parce-usage-region">
-            <div class="local_parce-usage-summary">
-                <span>{{#str}} conversation_usage, local_parce {{/str}}</span>
-                <span class="local_parce-usage-percentage">0%</span>
+        <div class="local_parce-usage-region"
+            data-site-level="{{#sitelevel}}1{{/sitelevel}}{{^sitelevel}}0{{/sitelevel}}"
+            data-context-page="{{contextpagelabel}}"
+            data-context-global="{{contextgloballabel}}">
+            <div class="local_parce-usage-main">
+                <div class="local_parce-usage-summary">
+                    <span>{{#str}} conversation_usage, local_parce {{/str}}</span>
+                    <span class="local_parce-usage-percentage">0%</span>
+                </div>
+                <div class="progress local_parce-usage-progress"
+                    role="progressbar"
+                    aria-label="{{#str}} conversation_usage_aria, local_parce {{/str}}"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0">
+                    <div class="progress-bar local_parce-usage-bar" style="width: 0%"></div>
+                </div>
             </div>
-            <div class="progress local_parce-usage-progress"
-                role="progressbar"
-                aria-label="{{#str}} conversation_usage_aria, local_parce {{/str}}"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                aria-valuenow="0">
-                <div class="progress-bar local_parce-usage-bar" style="width: 0%"></div>
+            <div class="local_parce-context-tools">
+                <span class="local_parce-context-label" title="{{contextlabel}}">{{contextlabel}}</span>
+                {{#helpicon}}
+                    {{> core/help_icon }}
+                {{/helpicon}}
+                <div class="dropdown local_parce-new-chat">
+                    <button type="button"
+                        class="btn btn-secondary local_parce-new-chat-btn dropdown-toggle"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        aria-label="{{#str}} new_conversation, local_parce {{/str}}"
+                        title="{{#str}} new_conversation, local_parce {{/str}}">+</button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <button type="button" class="dropdown-item" data-action="new-empty">
+                                {{#str}} new_conversation_empty, local_parce {{/str}}
+                            </button>
+                        </li>
+                        <li>
+                            <button type="button" class="dropdown-item" data-action="new-summary" disabled>
+                                {{#str}} new_conversation_summary, local_parce {{/str}}
+                            </button>
+                        </li>
+                    </ul>
+                </div>
             </div>
         </div>
         <div id="local_parce-messages-container"
@@ -60,9 +91,13 @@
             aria-relevant="additions"
             aria-atomic="false">
             <div class="local_parce-message-welcome">
-                <p>
-                    {{#str}} chat_welcome, local_parce {{/str}}
-                </p>
+                <p>{{#str}} chat_welcome, local_parce {{/str}}</p>
+                {{^sitelevel}}
+                <label class="form-check form-switch local_parce-global-switch">
+                    <input type="checkbox" class="form-check-input local_parce-global-context" role="switch">
+                    <span class="form-check-label">{{#str}} globalcontext, local_parce {{/str}}</span>
+                </label>
+                {{/sitelevel}}
             </div>
         </div>
         <div id="local_parce-chat-status"

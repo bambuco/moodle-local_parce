@@ -260,12 +260,77 @@
     }
 }
 
-/* Conversation usage */
+/* Conversation usage and context */
 .local_parce-usage-region {
-    padding: 6px 16px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
     background-color: var(--white, #fff);
     border-bottom: 1px solid #e0e0e0;
     flex-shrink: 0;
+}
+
+.local_parce-usage-main {
+    flex: 1 1 50%;
+    min-width: 0;
+    padding: 6px 10px;
+    border-right: 1px solid #e0e0e0;
+}
+
+.local_parce-context-tools {
+    flex: 1 1 50%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    padding-right: 10px;
+}
+
+.local_parce-context-label {
+    min-width: 0;
+    overflow: hidden;
+    color: #495057;
+    font-size: 11px;
+    line-height: 12px;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+
+.local_parce-context-tools .help-icon {
+    flex-shrink: 0;
+    margin-right: 0;
+}
+
+.btn.local_parce-new-chat-btn {
+    flex-shrink: 0;
+    padding: 0 4px;
+    font-size: 24px;
+    line-height: 1;
+    text-decoration: none;
+    font-weight: bold;
+
+    &.dropdown-toggle::after {
+        display: none;
+    }
+}
+
+.local_parce-new-chat .dropdown-menu {
+    max-width: 220px;
+    font-size: 12px;
+}
+
+.local_parce-new-chat .dropdown-item {
+    white-space: normal;
+    line-height: 110%;
+}
+
+.local_parce-global-switch {
+    margin: 8px 0 0;
+    font-size: 13px;
 }
 
 .local_parce-usage-summary {
@@ -420,6 +485,7 @@
     align-items: center;
     height: 100%;
     padding: 20px;
+    flex-direction: column;
 }
 
 .local_parce-message-welcome p {

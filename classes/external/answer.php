@@ -39,6 +39,12 @@ class answer extends external_api {
         return new external_function_parameters([
             'question' => new external_value(PARAM_RAW, 'Question from the user'),
             'contextid' => new external_value(PARAM_INT, 'Current context', VALUE_DEFAULT, 1),
+            'globalcontext' => new external_value(
+                PARAM_BOOL,
+                'Whether the first message of an empty conversation uses the site context',
+                VALUE_DEFAULT,
+                false
+            ),
         ]);
     }
 
@@ -49,15 +55,16 @@ class answer extends external_api {
      *
      * @param string $question The question submitted by the user
      * @param int $contextid The context ID for capability checks and answer generation
+     * @param bool $globalcontext Site context requested for the first message of an empty conversation
      * @return array Array containing the answer
      */
-    public static function execute(string $question, int $contextid = 1): array {
+    public static function execute(string $question, int $contextid = 1, bool $globalcontext = false): array {
         global $USER;
 
         // Parameter validation.
-        ['question' => $question, 'contextid' => $contextid] = self::validate_parameters(
+        ['question' => $question, 'contextid' => $contextid, 'globalcontext' => $globalcontext] = self::validate_parameters(
             self::execute_parameters(),
-            ['question' => $question, 'contextid' => $contextid]
+            ['question' => $question, 'contextid' => $contextid, 'globalcontext' => $globalcontext]
         );
 
         // Get the context instance from the provided context ID.
@@ -83,8 +90,17 @@ class answer extends external_api {
         $cacheversion = controller::get_active_cache_version();
 
         try {
+            $useglobal = controller::apply_requested_global_context(
+                $USER->id,
+                $chatid,
+                $context,
+                $globalcontext,
+                $newconversation
+            );
+            $answercontext = $useglobal ? \context_system::instance() : $context;
+
             // Process the question using the question handler.
-            $answer = \local_parce\local\question_handler::process($question, $context);
+            $answer = \local_parce\local\question_handler::process($question, $answercontext, null, $chatcontext);
             $result = \local_parce\local\question_handler::get_last_result();
 
             if (trim($answer) === 'NOT_FOUND') {
@@ -124,6 +140,7 @@ class answer extends external_api {
                 'answer' => $answer,
                 'newconversation' => $newconversation,
                 'usagepercentage' => $usage['percentage'],
+                'globalcontext' => controller::get_global_context($USER->id, $chatid),
             ] + $result;
         } finally {
             if (!$preparationresolved) {
@@ -142,6 +159,7 @@ class answer extends external_api {
             'answer' => new external_value(PARAM_RAW, 'The answer to the user question'),
             'newconversation' => new external_value(PARAM_BOOL, 'Whether this question started a new conversation'),
             'usagepercentage' => new external_value(PARAM_INT, 'Percentage of the active conversation limit used'),
+            'globalcontext' => new external_value(PARAM_BOOL, 'Whether the active conversation uses the site context'),
             'status' => new external_value(PARAM_ALPHAEXT, 'Result discriminator: success, error or rate_limited'),
             'successful' => new external_value(PARAM_BOOL, 'Whether the operation completed successfully'),
             'retryable' => new external_value(PARAM_BOOL, 'Whether a later user-initiated retry may succeed'),

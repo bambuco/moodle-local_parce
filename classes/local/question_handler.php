@@ -169,9 +169,15 @@ class question_handler {
      * @param string $question The question text from the user.
      * @param object $context The question context.
      * @param ai_gateway|null $gateway Optional test gateway.
+     * @param \context|null $chatcontext Canonical chat context when it differs from the question context.
      * @return string The response to the question.
      */
-    public static function process($question, $context = null, ?ai_gateway $gateway = null): string {
+    public static function process(
+        $question,
+        $context = null,
+        ?ai_gateway $gateway = null,
+        ?\context $chatcontext = null
+    ): string {
         global $USER;
 
         self::$lastactionids = [];
@@ -185,7 +191,7 @@ class question_handler {
             return self::failure_response('error_empty_question', 'invalid_question', false);
         }
 
-        $chatid = controller::get_chat_context($context)->id;
+        $chatid = ($chatcontext ?? controller::get_chat_context($context))->id;
 
         try {
             // Manage static requirements.
@@ -1406,5 +1412,86 @@ class question_handler {
         }
 
         return $lines;
+    }
+
+    /**
+     * Summarise a conversation into one paragraph.
+     *
+     * @param array $entries Chronological conversation entries
+     * @param \context $context Context used to trace the request
+     * @param int $chatid Canonical chat context ID
+     * @param string $conversationkey Conversation that supplied the entries
+     * @param ai_gateway|null $gateway Optional test gateway
+     * @return array Summary text, success flag and linked action IDs
+     */
+    public static function summarise(
+        array $entries,
+        \context $context,
+        int $chatid,
+        string $conversationkey,
+        ?ai_gateway $gateway = null
+    ): array {
+        global $USER;
+
+        self::$lastactionids = [];
+        self::$lastsuccessful = false;
+        $transcript = controller::build_summary_transcript($entries);
+        if ($transcript === '') {
+            return ['successful' => false, 'summary' => '', 'actionids' => []];
+        }
+
+        $prompt = get_string('conversation_summary_prompt', 'local_parce');
+        $gateway = $gateway ?? new ai_gateway();
+        $cacheversion = controller::get_active_cache_version();
+        $action = new \core_ai\aiactions\generate_text(
+            contextid: $context->id,
+            userid: (int) $USER->id,
+            prompttext: $transcript
+        );
+        $generation = self::traced_generate(
+            $gateway,
+            $action,
+            (int) $USER->id,
+            $context->id,
+            $chatid,
+            $conversationkey,
+            bin2hex(random_bytes(32)),
+            'summary',
+            $prompt,
+            $transcript,
+            $cacheversion,
+            function ($response): string {
+                if (!$response->get_success()) {
+                    if ($response->get_errorcode() === 429) {
+                        return 'rate_limited';
+                    }
+                    return self::is_timeout_message($response->get_errormessage()) ? 'timeout' : 'provider_error';
+                }
+                $content = trim((string) ($response->get_response_data()['generatedcontent'] ?? ''));
+                return $content === '' ? 'empty_response' : 'success';
+            }
+        );
+        if ($generation === null || !controller::is_active_cache_version($cacheversion)) {
+            return ['successful' => false, 'summary' => '', 'actionids' => self::$lastactionids];
+        }
+
+        $response = $generation['response'];
+        if (!$response->get_success()) {
+            return ['successful' => false, 'summary' => '', 'actionids' => self::$lastactionids];
+        }
+        $summary = trim((string) preg_replace(
+            '/\s+/u',
+            ' ',
+            (string) ($response->get_response_data()['generatedcontent'] ?? '')
+        ));
+        if ($summary === '') {
+            return ['successful' => false, 'summary' => '', 'actionids' => self::$lastactionids];
+        }
+
+        return [
+            'successful' => true,
+            'summary' => $summary,
+            'actionids' => self::$lastactionids,
+        ];
     }
 }

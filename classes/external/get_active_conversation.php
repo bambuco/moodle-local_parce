@@ -61,17 +61,22 @@ class get_active_conversation extends external_api {
         self::validate_chat_context($context);
         controller::require_chat_access($context);
 
-        $entries = controller::get_conversation_entries($USER->id, $context->id);
-        foreach ($entries as &$entry) {
-            $entry['timestamp_formatted'] = controller::format_timestamp($entry['timestamp']);
+        $entries = [];
+        foreach (controller::get_conversation_entries($USER->id, $context->id) as $entry) {
+            $entries[] = [
+                'role' => $entry['role'],
+                'content' => $entry['content'],
+                'timestamp' => $entry['timestamp'],
+                'timestamp_formatted' => controller::format_timestamp($entry['timestamp']),
+            ];
         }
-        unset($entry);
 
         $usage = controller::get_conversation_usage($USER->id, $context->id);
         return [
             'entries' => $entries,
             'total' => count($entries),
             'usagepercentage' => $usage['percentage'],
+            'globalcontext' => controller::get_global_context($USER->id, $context->id),
         ];
     }
 
@@ -101,6 +106,7 @@ class get_active_conversation extends external_api {
             ])),
             'total' => new external_value(PARAM_INT, 'Total messages'),
             'usagepercentage' => new external_value(PARAM_INT, 'Percentage of the active conversation limit used'),
+            'globalcontext' => new external_value(PARAM_BOOL, 'Whether the active conversation uses the site context'),
         ]);
     }
 }
