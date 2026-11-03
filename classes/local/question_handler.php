@@ -690,8 +690,9 @@ class question_handler {
         $type = preg_replace('/[^a-z_]/', '', (string) $bundle['type']);
         $status = preg_replace('/[^a-z_]/', '', (string) $bundle['status']);
         $resolved = str_replace(['"', '<', '>'], ["'", '', ''], (string) $bundle['resolvedquestion']);
+        $content = self::strip_retrieval_scores((string) ($bundle['content'] ?? ''));
         return '<INTENT_START type="' . $type . '" status="' . $status . '" resolved="' . $resolved . '">'
-            . ($bundle['content'] ?? '')
+            . $content
             . '<INTENT_END>';
     }
 
@@ -1094,7 +1095,13 @@ class question_handler {
         string $intentname,
         array $intentparams
     ): array|string {
-        $hackquestion = controller::build_ai_payload($resolvedquestion, $previous, $content, '', $coursecard);
+        $hackquestion = controller::build_ai_payload(
+            $resolvedquestion,
+            $previous,
+            self::strip_retrieval_scores($content),
+            '',
+            $coursecard
+        );
         $action = new question_plan(
             contextid: $context->id,
             userid: $userid,
@@ -1397,7 +1404,14 @@ class question_handler {
                     continue;
                 }
             }
-            $sources[$decodedurl] = ['name' => $name, 'url' => $url];
+            $source = ['name' => $name, 'url' => $url];
+            if (array_key_exists('lexscore', $item) && $item['lexscore'] !== null && $item['lexscore'] !== '') {
+                $source['lexscore'] = (int) $item['lexscore'];
+            }
+            if (array_key_exists('relevance', $item) && $item['relevance'] !== null && $item['relevance'] !== '') {
+                $source['relevance'] = (float) $item['relevance'];
+            }
+            $sources[$decodedurl] = $source;
         }
 
         if (empty($sources)) {
@@ -1409,10 +1423,68 @@ class question_handler {
             $lines .= '- 📚 ' . get_string('course_reference', 'local_parce', [
                 'coursename' => $source['name'],
                 'courseurl' => $source['url'],
-            ]) . "\n";
+            ]) . self::reference_marks($source) . "\n";
         }
 
         return $lines;
+    }
+
+    /**
+     * Remove retrieval scores from a copy of content sent to the answer model.
+     *
+     * The footer keeps the original JSON. Only a top-level list of objects is
+     * rewritten, so other retrieved text is left unchanged.
+     *
+     * @param string $content Retrieved content, often a JSON list of resources.
+     * @return string Content without lexscore and relevance keys.
+     */
+    private static function strip_retrieval_scores(string $content): string {
+        $items = json_decode($content, true);
+        if (!is_array($items) || $items === [] || !array_is_list($items)) {
+            return $content;
+        }
+
+        $changed = false;
+        foreach ($items as &$item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if (array_key_exists('lexscore', $item) || array_key_exists('relevance', $item)) {
+                unset($item['lexscore'], $item['relevance']);
+                $changed = true;
+            }
+        }
+        unset($item);
+        if (!$changed) {
+            return $content;
+        }
+
+        $json = json_encode($items, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        return $json === false ? $content : $json;
+    }
+
+    /**
+     * Build discreet origin marks for one source line.
+     *
+     * Each mark is a span. The score is only in the title attribute.
+     *
+     * @param array $source Source name, URL and any scores that were kept.
+     * @return string Marks to append after the markdown link, or an empty string.
+     */
+    private static function reference_marks(array $source): string {
+        $marks = '';
+        if (array_key_exists('lexscore', $source)) {
+            $title = get_string('reference_lexical_title', 'local_parce', (int) $source['lexscore']);
+            $marks .= ' <em title="' . s($title) . '">'
+                . s(get_string('reference_lexical_mark', 'local_parce')) . '</em>';
+        }
+        if (array_key_exists('relevance', $source)) {
+            $formatted = number_format((float) $source['relevance'], 2, '.', '');
+            $title = get_string('reference_semantic_title', 'local_parce', $formatted);
+            $marks .= ' <em title="' . s($title) . '">'
+                . s(get_string('reference_semantic_mark', 'local_parce')) . '</em>';
+        }
+        return empty($marks) ? '' : '<span class="local_parce-reference-marks">[' . $marks . ']</span>';
     }
 
     /**

@@ -731,3 +731,9 @@
 .local-parce-iconpicker-option input {
     margin: 0;
 }
+
+.local_parce-reference-marks {
+    font-size: 0.8rem;
+    font-weight: normal;
+    color: #6c757d;
+}

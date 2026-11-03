@@ -847,6 +847,71 @@ final class question_handler_test extends \advanced_testcase {
         $this->assertStringContainsString($resourceurl, $references);
         $this->assertStringContainsString('Are social networks a window to the world?', $references);
         $this->assertStringNotContainsString($courseurl, $references);
+        $this->assertStringNotContainsString('<span', $references);
+    }
+
+    /**
+     * Source lines keep retrieval order and show origin marks only for scores that exist.
+     */
+    public function test_references_show_origin_marks_in_retrieval_order(): void {
+        $content = json_encode([
+            [
+                'name' => 'Group study notes',
+                'url' => 'https://example.test/mod/page/view.php?id=3',
+                'lexscore' => 4,
+                'relevance' => 0.72,
+            ],
+            [
+                'name' => 'Delivery calendar',
+                'url' => 'https://example.test/mod/page/view.php?id=9',
+                'lexscore' => 1,
+            ],
+        ], JSON_UNESCAPED_UNICODE);
+        $method = new \ReflectionMethod(\local_parce\local\question_handler::class, 'build_course_references');
+
+        $references = $method->invoke(null, $content, \context_system::instance(), 'Generated answer');
+
+        $notes = strpos($references, 'Group study notes');
+        $calendar = strpos($references, 'Delivery calendar');
+        $this->assertNotFalse($notes);
+        $this->assertNotFalse($calendar);
+        $this->assertLessThan($calendar, $notes);
+        $this->assertStringContainsString('title="Lexical: 4"', $references);
+        $this->assertStringContainsString('title="Semantic: 0.72"', $references);
+        $this->assertStringContainsString('title="Lexical: 1"', $references);
+        $this->assertSame(1, substr_count($references, 'title="Semantic:'));
+    }
+
+    /**
+     * Scores copied for the footer are removed from the text sent to the model.
+     */
+    public function test_retrieval_scores_are_removed_from_model_content(): void {
+        $content = json_encode([[
+            'name' => 'Group study notes',
+            'content' => 'Sharing notes helps groups study.',
+            'lexscore' => 4,
+            'relevance' => 0.72,
+        ]]);
+        $strip = new \ReflectionMethod(\local_parce\local\question_handler::class, 'strip_retrieval_scores');
+        $stripped = $strip->invoke(null, $content);
+        $items = json_decode($stripped, true);
+
+        $this->assertSame('Sharing notes helps groups study.', $items[0]['content']);
+        $this->assertArrayNotHasKey('lexscore', $items[0]);
+        $this->assertArrayNotHasKey('relevance', $items[0]);
+        $this->assertSame('plain text', $strip->invoke(null, 'plain text'));
+
+        $bundle = new \ReflectionMethod(\local_parce\local\question_handler::class, 'format_intent_bundle');
+        $formatted = $bundle->invoke(null, [
+            'type' => 'content',
+            'status' => 'ok',
+            'resolvedquestion' => 'How do groups study?',
+            'content' => $content,
+        ]);
+        $this->assertStringNotContainsString('lexscore', $formatted);
+        $this->assertStringNotContainsString('relevance', $formatted);
+        $this->assertStringContainsString('Sharing notes helps groups study.', $formatted);
+        $this->assertStringContainsString('lexscore', $content);
     }
 
     /**

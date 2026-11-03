@@ -32,9 +32,9 @@ class vector_rank {
      * Merge the two result lists down to the requested limit.
      *
      * Each lexical row has id, lexscore, contentlength, order and resource.
-     * Each vector row has id, cosine, passage and resource. The resource is a
-     * stdClass whose content property receives the passage when the hit is kept
-     * for its vector score.
+     * Each vector row has id, cosine, passage and resource. The returned resource
+     * keeps lexscore and relevance for the footer. The row key stays cosine.
+     * Content receives the passage when the hit is kept for its vector score.
      *
      * @param array $lexical Lexical candidates that already passed the keyword filter.
      * @param array $vector Vector candidates, including those below the minimum.
@@ -104,15 +104,42 @@ class vector_rank {
 
         $ranked = [];
         foreach ($dual as $pair) {
-            $ranked[] = self::with_passage($pair['lexical']['resource'], (string) ($pair['vector']['passage'] ?? ''));
+            $resource = self::with_passage($pair['lexical']['resource'], (string) ($pair['vector']['passage'] ?? ''));
+            $ranked[] = self::with_scores(
+                $resource,
+                (int) $pair['lexical']['lexscore'],
+                (float) $pair['vector']['cosine']
+            );
         }
         foreach ($lexicalonly as $row) {
-            $ranked[] = $row['resource'];
+            $ranked[] = self::with_scores($row['resource'], (int) $row['lexscore'], null);
         }
         foreach ($vectoronly as $row) {
-            $ranked[] = self::with_passage($row['resource'], (string) ($row['passage'] ?? ''));
+            $resource = self::with_passage($row['resource'], (string) ($row['passage'] ?? ''));
+            $ranked[] = self::with_scores($resource, null, (float) $row['cosine']);
         }
         return array_slice($ranked, 0, max(0, $limit));
+    }
+
+    /**
+     * Copy the scores that reached the footer onto one resource.
+     *
+     * A null score is omitted, so a lexical-only hit has no relevance property
+     * and a vector-only hit has no lexscore property.
+     *
+     * @param \stdClass $resource Result that will be encoded for the footer.
+     * @param int|null $lexscore Keyword score, when the lexical search kept the hit.
+     * @param float|null $relevance Cosine that cleared the minimum, stored as relevance.
+     * @return \stdClass The same resource.
+     */
+    private static function with_scores(\stdClass $resource, ?int $lexscore, ?float $relevance): \stdClass {
+        if ($lexscore !== null) {
+            $resource->lexscore = $lexscore;
+        }
+        if ($relevance !== null) {
+            $resource->relevance = $relevance;
+        }
+        return $resource;
     }
 
     /**

@@ -58,6 +58,12 @@ final class vector_rank_test extends \basic_testcase {
         $this->assertStringContainsString('Sharing notes helps groups study.', $ranked[0]->content);
         $this->assertStringContainsString('Social networks spread professional contact.', $ranked[1]->content);
         $this->assertStringNotContainsString('tutor questions', $ranked[2]->content);
+        $this->assertSame(4, $ranked[0]->lexscore);
+        $this->assertEqualsWithDelta(0.72, $ranked[0]->relevance, 0.0001);
+        $this->assertSame(3, $ranked[1]->lexscore);
+        $this->assertEqualsWithDelta(0.61, $ranked[1]->relevance, 0.0001);
+        $this->assertSame(1, $ranked[2]->lexscore);
+        $this->assertFalse(property_exists($ranked[2], 'relevance'));
     }
 
     /**
@@ -77,6 +83,10 @@ final class vector_rank_test extends \basic_testcase {
         $this->assertSame('Delivery calendar', $ranked[0]->name);
         $this->assertSame('Forum', $ranked[1]->name);
         $this->assertSame('The course forum collects tutor questions.', $ranked[1]->content);
+        $this->assertSame(1, $ranked[0]->lexscore);
+        $this->assertFalse(property_exists($ranked[0], 'relevance'));
+        $this->assertEqualsWithDelta(0.60, $ranked[1]->relevance, 0.0001);
+        $this->assertFalse(property_exists($ranked[1], 'lexscore'));
     }
 
     /**
@@ -98,6 +108,9 @@ final class vector_rank_test extends \basic_testcase {
         $this->assertSame('Professional contact', $ranked[1]->name);
         $this->assertStringContainsString('Sharing notes helps groups study.', $ranked[0]->content);
         $this->assertStringNotContainsString('professional contact.', strtolower($ranked[1]->content));
+        $this->assertEqualsWithDelta(0.72, $ranked[0]->relevance, 0.0001);
+        $this->assertSame(3, $ranked[1]->lexscore);
+        $this->assertFalse(property_exists($ranked[1], 'relevance'));
     }
 
     /**

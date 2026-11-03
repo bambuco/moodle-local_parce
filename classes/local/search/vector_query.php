@@ -140,10 +140,18 @@ class vector_query {
             $query->addFilterQuery($filter);
         }
         $query->addFilterQuery(vector_schema::PARENT_FIELD . ':*');
-        foreach ([
-            'id', 'score', 'itemid', 'areaid', 'courseid', 'contextid', 'title',
-            vector_schema::CHUNK_FIELD, vector_schema::PARENT_FIELD,
-        ] as $field) {
+        $fields = [
+            'id',
+            'score',
+            'itemid',
+            'areaid',
+            'courseid',
+            'contextid',
+            'title',
+            vector_schema::CHUNK_FIELD,
+            vector_schema::PARENT_FIELD,
+        ];
+        foreach ($fields as $field) {
             $query->addField($field);
         }
 
