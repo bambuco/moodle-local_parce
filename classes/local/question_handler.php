@@ -621,7 +621,8 @@ class question_handler {
 
         foreach ($admitted as $index => $intent) {
             $intentclass = '\local_parce\local\intent\\' . $intent['type'];
-            $intentobj = new $intentclass($context, null, $intent['params']);
+            $resolved = trim((string) ($intent['resolvedquestion'] ?? ''));
+            $intentobj = new $intentclass($context, null, $intent['params'], $resolved);
             $status = 'ok';
             $content = '';
             $message = '';

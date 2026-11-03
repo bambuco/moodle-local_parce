@@ -75,6 +75,28 @@ if ($hassiteconfig) {
         0
     ));
 
+    // Search passages by meaning as well as by keywords.
+    $settings->add(new admin_setting_configcheckbox(
+        'local_parce/vectorsearch',
+        get_string('setting_vectorsearch', 'local_parce'),
+        get_string('setting_vectorsearch_desc', 'local_parce'),
+        0
+    ));
+    $settings->add(new admin_setting_configtext(
+        'local_parce/vector_embed_url',
+        get_string('setting_vector_embed_url', 'local_parce'),
+        get_string('setting_vector_embed_url_desc', 'local_parce'),
+        '',
+        PARAM_URL
+    ));
+    $settings->add(new admin_setting_configtext(
+        'local_parce/vector_min_score',
+        get_string('setting_vector_min_score', 'local_parce'),
+        get_string('setting_vector_min_score_desc', 'local_parce'),
+        '0.55',
+        '/^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/'
+    ));
+
     // Words that add rank points without being required to keep a result.
     $settings->add(new admin_setting_configtextarea(
         'local_parce/supportwords',
@@ -214,6 +236,12 @@ if ($hassiteconfig) {
             'local_parce_filecontent',
             get_string('filecontent_page', 'local_parce'),
             new moodle_url('/local/parce/filecontent.php'),
+            'moodle/site:config'
+        ));
+        $ADMIN->add('local_parce_folder', new admin_externalpage(
+            'local_parce_vectorsearch',
+            get_string('vectorsearch_page', 'local_parce'),
+            new moodle_url('/local/parce/vectorsearch.php'),
             'moodle/site:config'
         ));
     }

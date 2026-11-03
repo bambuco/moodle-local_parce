@@ -72,7 +72,7 @@ class content extends base {
             $keywords = [$keywords];
         }
         $q = implode(' ', $keywords);
-        $content = self::get_search($q, $keywords);
+        $content = $this->get_search($q, $keywords, [], $this->resolvedquestion);
 
         if (empty($content)) {
             $allowopenanswer = get_config('local_parce', 'allowopenanswer');
@@ -102,9 +102,15 @@ class content extends base {
      * @param string $search The search keywords.
      * @param array $keywords Keywords used to confirm that each result is relevant.
      * @param array $resourcetype Optional array of resource types to filter the search.
+     * @param string $resolvedquestion Standalone question embedded for the vector search.
      * @return string JSON encoded string of found resources or an error message if search is unavailable
      */
-    protected function get_search(string $search, array $keywords, array $resourcetype = []): string {
+    protected function get_search(
+        string $search,
+        array $keywords,
+        array $resourcetype = [],
+        string $resolvedquestion = ''
+    ): string {
         global $USER;
 
         if (empty($search) && empty($resourcetype)) {
@@ -157,12 +163,16 @@ class content extends base {
         // Impersonate the chat user so check_access() runs as them.
         // Do not set userids: engines that support it treat it as an author filter.
         $tmpuser = $USER;
+        $vectorhits = [];
         try {
             $results = [];
             if ($this->user->id != $USER->id) {
                 $USER = $this->user;
             }
             $results = $searchmanager->search($data);
+            if (\local_parce\local\search\vector_query::is_enabled()) {
+                $vectorhits = (new \local_parce\local\search\vector_query())->passages($data, $resolvedquestion);
+            }
 
             if (empty($coursecontext)) {
                 // Search in the public area.
@@ -212,25 +222,25 @@ class content extends base {
             $resource->courseurl = (string)\course_get_url($courseid);
 
             $found[] = [
+                'id' => $parentid !== '' ? $parentid : 'lexical-' . $resultorder,
                 'resource' => $resource,
-                'score' => $score,
+                'lexscore' => $score,
                 'contentlength' => \core_text::strlen(trim((string) $resource->content)),
                 'order' => $resultorder++,
             ];
         }
 
-        if (empty($found)) {
+        $ranked = \local_parce\local\search\vector_rank::merge(
+            $found,
+            $vectorhits,
+            \local_parce\local\search\vector_schema::minimum_score(),
+            $limit
+        );
+        if ($ranked === []) {
             return '';
         }
 
-        usort($found, static function (array $first, array $second): int {
-            return ($second['score'] <=> $first['score'])
-                ?: ($second['contentlength'] <=> $first['contentlength'])
-                ?: ($first['order'] <=> $second['order']);
-        });
-        $found = array_map(static fn(array $candidate): \stdClass => $candidate['resource'], array_slice($found, 0, $limit));
-
-        return \local_parce\local\controller::encode_retrieved_items($found);
+        return \local_parce\local\controller::encode_retrieved_items($ranked);
     }
 
     /**

@@ -30,6 +30,7 @@ class base {
      * @param \core\context $context Intention context.
      * @param ?object $user The user for whom the intent is being processed.
      * @param array $params Can be a string with keywords or an array with more specific parameters.
+     * @param string $resolvedquestion Standalone question for this intent. Empty for intents that do not search.
      */
     public function __construct(
         /** @var \core\context Intention context. */
@@ -37,7 +38,9 @@ class base {
         /** @var ?object User. */
         protected ?object $user,
         /** @var array Intent params. */
-        protected array $params = []
+        protected array $params = [],
+        /** @var string Standalone question produced by the plan. */
+        protected string $resolvedquestion = ''
     ) {
         global $USER;
 
