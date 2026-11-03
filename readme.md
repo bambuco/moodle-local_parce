@@ -71,6 +71,10 @@ Search, calendar, course-structure, grade and progress retrieval always use the 
 
 ## In version
 
+- 2026110201:
+    -- Reference marks
+    -- Vector search support
+
 - 2026103101:
     -- New appearance settings
     -- Support for context-based searching within files when using Solr.
